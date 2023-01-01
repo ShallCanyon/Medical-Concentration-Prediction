@@ -9,58 +9,106 @@ ratio_csvfilepath = f"./result/{filetime}/MaxBrainBloodRatio.csv"
 # 计算出药物的Mordred描述符以及最大脑血比的数据集
 desc_csvfilepath = f"./result/{filetime}/RatioDescriptors.csv"
 
-model_enum = ['XGB', 'LGBM']
-model_type = model_enum[1]
+model_enum = ['XGB', 'LGBM', 'SVM', 'RF']
+model_type = model_enum[2]
 
+"""SVM
+Blood data:
+R2 Scores: 0.0415 (+/- 0.08)
+RMSE Scores: 5.6040 (+/- 3.33)
+Brain data:
+R2 Scores: 0.2458 (+/- 0.32)
+RMSE Scores: 55.0709 (+/- 46.54)
+"""
+"""RF
+Blood data:
+R2 Scores: 0.4831 (+/- 0.31)
+RMSE Scores: 4.2956 (+/- 1.63)
+Brain data:
+R2 Scores: -7.5106 (+/- 10.84)
+RMSE Scores: 53.1822 (+/- 33.33)
+"""
 model_params = {
     'XGB': {
         'blood_params': {
-            'n_estimators': 1850,
-            'learning_rate': 0.016,
-            'max_depth': 30,
-            'lambda': 0.21396204986950074,
-            'alpha': 9.722159852062028,
-            'min_child_weight': 9,
-            'gamma': 0,
-            'colsample_bytree': 0.8,
-            'colsample_bylevel': 0.9,
-            'colsample_bynode': 0.3,
+            'n_estimators': 1950,
+            'learning_rate': 0.014,
+            'max_depth': 18,
+            'lambda': 8.645496158267079,
+            'alpha': 0.45639661861114994,
+            'min_child_weight': 1,
+            'gamma': 9,
+            'colsample_bytree': 0.30000000000000004,
+            'colsample_bylevel': 0.30000000000000004,
+            'colsample_bynode': 0.9,
         },
         'brain_params': {
-            'n_estimators': 1400,
-            'learning_rate': 0.03,
-            'max_depth': 2,
-            'lambda': 0.07718586294091904,
-            'alpha': 2.5070868940026005,
-            'min_child_weight': 6,
-            'gamma': 1,
-            'colsample_bytree': 0.1,
-            'colsample_bylevel': 0.9,
-            'colsample_bynode': 0.7,
+            'n_estimators': 1550,
+            'learning_rate': 0.018,
+            'max_depth': 24,
+            'lambda': 0.07683686528439758,
+            'alpha': 0.008538159369120378,
+            'min_child_weight': 16,
+            'gamma': 8,
+            'colsample_bytree': 0.4,
+            'colsample_bylevel': 0.8,
+            'colsample_bynode': 0.4,
         }
     },
     'LGBM': {
         'blood_params': {
-            'boosting_type': 'dart',
-            'max_depth': 27,
-            'learning_rate': 0.012,
-            'n_estimators': 1950,
+            # 'boosting_type': 'dart',
+            # 'max_depth': 27,
+            # 'learning_rate': 0.012,
+            # 'n_estimators': 1950,
+            # 'objective': 'regression',
+            # 'min_child_samples': 7,
+            # 'reg_lambda': 8.742591593419672,
+            # 'reg_alpha': 0.03613741302435425,
+            'boosting_type': 'gbdt',
+            'max_depth': 25,
+            'learning_rate': 0.023,
+            'n_estimators': 1650,
             'objective': 'regression',
-            'min_child_samples': 7,
-            'reg_lambda': 8.742591593419672,
-            'reg_alpha': 0.03613741302435425,
+            'min_child_samples': 8,
+            'reg_lambda': 0.023612179335686056,
+            'reg_alpha': 8.209581280307875,
         },
         'brain_params': {
-            'boosting_type': 'gbdt',
-            'max_depth': 16,
-            'learning_rate': 0.025,
-            'n_estimators': 2550,
+            'boosting_type': 'dart',
+            'max_depth': 2,
+            'learning_rate': 0.028,
+            'n_estimators': 2900,
             'objective': 'regression',
-            'min_child_samples': 28,
-            'reg_lambda': 0.08538775926146094,
-            'reg_alpha': 0.07632249600835359,
+            'min_child_samples': 27,
+            'reg_lambda': 3.99101992359789,
+            'reg_alpha': 0.00690882557106338,
         }
     },
+    'SVM':{
+        'blood_params': {
+            'C': 10,
+            'gamma': 'scale',
+            'tol': 0.01,
+            'max_iter': 10000,
+            'epsilon': 0.9160690029281867,
+        },
+        'brain_params': {
+            'C': 10,
+            'gamma': 'auto',
+            'tol': 0.0001,
+            'max_iter': 1000,
+            'epsilon': 0.39178737601316815,
+        }
+    },
+    'RF':{
+        'blood_params': {
+
+        },
+        'brain_params': {
+            
+        }
+    }
 }
 
 # 特征筛选

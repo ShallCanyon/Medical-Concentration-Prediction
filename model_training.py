@@ -9,6 +9,10 @@ import lightgbm as lgb
 from sklearn.model_selection import train_test_split, KFold, cross_val_score
 from xgboost.sklearn import XGBRegressor
 from lightgbm.sklearn import LGBMRegressor
+from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestRegressor as RF
+from sklearn.linear_model import LogisticRegression as LR
+from sklearn.neighbors import KNeighborsRegressor as KNN
 from sklearn.metrics import mean_squared_error, median_absolute_error, mean_squared_log_error, mean_absolute_error, r2_score
 import sklearn.metrics
 import global_config as cfg
@@ -23,7 +27,6 @@ def main():
     # 计算出药物的Mordred描述符以及最大脑血比的数据集
     desc_csvfilepath = cfg.desc_csvfilepath
     generate_new_data = [False, False, False]
-    regressor_type = 'LGBM'
 
     print("Running...")
     if not os.path.exists(raw_csvfilepath) or generate_new_data[0]:
@@ -110,7 +113,6 @@ def calculate_blood_brain_ratio(raw_csvfilepath, ratio_csvfilepath):
                     ratio2time[column.split(" ")[1].replace('mean', '')] = [brain_num, blood_num, brainbloodratio]
         # kv[1][2]指定为以脑血浓度比进行降序排序
         sorted_data = sorted(ratio2time.items(), key=lambda kv: (kv[1][2], kv[0]), reverse=True)
-        # print(sorted_data)
         # 获取最大脑血浓度比的数据
         compound_ratio[index] = sorted_data[0]
     # 将字典转换成Dataframe所需的列表格式
@@ -124,19 +126,6 @@ def calculate_blood_brain_ratio(raw_csvfilepath, ratio_csvfilepath):
         ratio = value[1][2]
         max_ratio_list.append([index, smiles, brain_num, blood_num, ratio, time])
     df = pd.DataFrame(data=max_ratio_list, columns=['Compound index', 'SMILES', 'Brain', 'Blood', 'Brain/Blood', 'Reach time'])
-
-    #     # 降序排序并获取第一个最大值
-    #     compound_ratio[index] = sorted(ratio2time.items(), key=lambda kv: (kv[1], kv[0]), reverse=True)[0]
-    # # 将字典转换成Dataframe所需的列表格式
-    # max_ratio_list = []
-    # for key, value in compound_ratio.items():
-    #     index = key[0]
-    #     smiles = key[1]
-    #     time = value[0]
-    #     ratio = value[1]
-    #     max_ratio_list.append([index, smiles, ratio, time])
-    # df = pd.DataFrame(data=max_ratio_list, columns=['Compound index', 'SMILES', 'Max(Brain/Blood)', 'Reach time'])
-    # print(df)
     df.to_csv(ratio_csvfilepath, index=False)
 
 def calculate_desc(srcfile, dstfile):
@@ -158,6 +147,10 @@ def calculate_desc(srcfile, dstfile):
 
 def get_X_Y(csvfile):
     df = pd.read_csv(csvfile)
+    # 去除含有无效值的列
+    df = df[~df.isin([np.nan, np.inf, -np.inf]).any(1)]
+    df = df.dropna(axis=0, how='any')
+
     X = df.drop(['SMILES', 'Blood', 'Brain', 'Ratio'], axis=1)
     X = MinMaxScaler().fit_transform(X)
     # print(len(X))
@@ -165,11 +158,12 @@ def get_X_Y(csvfile):
     brain_y = df['Brain'].ravel()
     ratio_y = df['Ratio'].ravel()
     SMILES = df['SMILES']
-    return pd.DataFrame(X), blood_y, brain_y, ratio_y, SMILES
+    return pd.DataFrame(X).astype('float64'), blood_y, brain_y, ratio_y, SMILES
 
 def train_model(blood_X, brain_X, blood_y, brain_y, ratio_y, model_type=None, cv_times=5):
     if model_type is None:
         raise ValueError
+    # 获取模型类型及其参数并初始化
     if model_type == cfg.model_enum[0]: #XGB
         params = cfg.model_params.get('XGB')
         blood_model = XGBRegressor(**params.get('blood_params'))
@@ -178,6 +172,14 @@ def train_model(blood_X, brain_X, blood_y, brain_y, ratio_y, model_type=None, cv
         params = cfg.model_params.get('LGBM')
         blood_model = LGBMRegressor(**params.get('blood_params'))
         brain_model = LGBMRegressor(**params.get('brain_params'))
+    elif model_type == cfg.model_enum[2]: #SVM
+        params = cfg.model_params.get('SVM')
+        blood_model = SVR(**params.get('blood_params'))
+        brain_model = SVR(**params.get('brain_params'))
+    elif model_type == cfg.model_enum[3]: #RF
+        params = cfg.model_params.get('RF')
+        blood_model = RF(**params.get('blood_params'))
+        brain_model = RF(**params.get('brain_params'))
         
     cv = KFold(n_splits=cv_times, shuffle=True)
 
@@ -185,19 +187,25 @@ def train_model(blood_X, brain_X, blood_y, brain_y, ratio_y, model_type=None, cv
     blood_rmse_scores = np.empty(cv_times)
     brain_r2_scores = np.empty(cv_times)
     brain_rmse_scores = np.empty(cv_times)
+    print(model_type)
     
     # Blood
     for idx, (train_idx, test_idx) in enumerate(cv.split(blood_X, blood_y)):
         X_train, X_test = blood_X.iloc[train_idx], blood_X.iloc[test_idx]
         y_train, y_test = blood_y[train_idx], blood_y[test_idx]
         
+        #TODO: SVM, RF
         if model_type == cfg.model_enum[0]: #XGB
-            blood_model.fit(X_train, y_train, eval_set=[
-            (X_test, y_test)], early_stopping_rounds=100, verbose=False)
+            blood_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], early_stopping_rounds=100, verbose=False)
         elif model_type == cfg.model_enum[1]:   #LGBM
             callbacks = [lgb.log_evaluation(period=0)]
-            blood_model.fit(X_train, y_train, eval_set=[
-            (X_test, y_test)], callbacks=callbacks)
+            blood_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], callbacks=callbacks)
+        elif model_type == cfg.model_enum[2]:   #SVM
+            
+            blood_model.fit(X_train, y_train)
+        elif model_type == cfg.model_enum[3]:   #RF
+            # print(X_train)
+            blood_model.fit(X_train, y_train)
         
         preds = blood_model.predict(X_test)
 
@@ -212,13 +220,17 @@ def train_model(blood_X, brain_X, blood_y, brain_y, ratio_y, model_type=None, cv
         y_train, y_test = brain_y[train_idx], brain_y[test_idx]
 
         if model_type == cfg.model_enum[0]: #XGB
-            brain_model.fit(X_train, y_train, eval_set=[
-            (X_test, y_test)], early_stopping_rounds=100, verbose=False)
+            brain_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], early_stopping_rounds=100, verbose=False)
         elif model_type == cfg.model_enum[1]:   #LGBM
             callbacks = [lgb.log_evaluation(period=0)]
-            brain_model.fit(X_train, y_train, eval_set=[
-            (X_test, y_test)], callbacks=callbacks) 
-        
+            brain_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], callbacks=callbacks)
+        elif model_type == cfg.model_enum[2]:   #SVM
+            
+            brain_model.fit(X_train, y_train)
+        elif model_type == cfg.model_enum[3]:   #RF
+            
+            brain_model.fit(X_train, y_train)
+
         preds = brain_model.predict(X_test)
 
         r2 = r2_score(y_test, preds)
