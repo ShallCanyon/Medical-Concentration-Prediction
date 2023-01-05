@@ -13,58 +13,10 @@ from sklearn.svm import SVR
 from sklearn.ensemble import RandomForestRegressor as RF
 from sklearn.linear_model import LogisticRegression as LR
 from sklearn.neighbors import KNeighborsRegressor as KNN
-from sklearn.metrics import mean_squared_error, median_absolute_error, mean_squared_log_error, mean_absolute_error, r2_score
-import sklearn.metrics
+from sklearn.neural_network import MLPRegressor as MLP
+from sklearn.metrics import mean_squared_error, median_absolute_error, mean_squared_log_error, mean_absolute_error, \
+    r2_score
 import global_config as cfg
-
-def main():
-    # 原始的集成数据集
-    workbookpath = cfg.workbookpath
-    # 从原始数据集中挑选出脑部与血液浓度的数据集
-    raw_csvfilepath = cfg.raw_csvfilepath
-    # 计算得到最大脑血比的数据集
-    ratio_csvfilepath = cfg.ratio_csvfilepath
-    # 计算出药物的Mordred描述符以及最大脑血比的数据集
-    desc_csvfilepath = cfg.desc_csvfilepath
-    generate_new_data = [False, False, False]
-
-    print("Running...")
-    if not os.path.exists(raw_csvfilepath) or generate_new_data[0]:
-        print("Getting blood brain file...")
-        get_brainblood_csv(workbookpath, raw_csvfilepath)
-
-    if not os.path.exists(ratio_csvfilepath) or generate_new_data[1]:
-        print("Calculating blood brain ratio...")
-        calculate_blood_brain_ratio(raw_csvfilepath, ratio_csvfilepath)
-
-    if not os.path.exists(desc_csvfilepath) or generate_new_data[2]:
-        print("Calculating descriptors...")
-        calculate_desc(ratio_csvfilepath, desc_csvfilepath)
-
-    X, blood_y, brain_y, ratio_y, SMILES = get_X_Y(desc_csvfilepath)
-    feature_select = True
-    if feature_select:
-        # 特征筛选
-        blood_X = X.iloc[:, cfg.blood_fea]
-        brain_X = X.iloc[:, cfg.brain_fea]
-    else:
-        blood_X = X
-        brain_X = X
-
-    print("Start training model...")
-    blood_r2_scores, blood_rmse_scores, brain_r2_scores,brain_rmse_scores = train_model(blood_X, brain_X, blood_y, brain_y, ratio_y, cfg.model_type)
-
-    print("Blood data:")
-    print("R2 Scores: %0.4f (+/- %0.2f)" %
-        (blood_r2_scores.mean(), blood_r2_scores.std()))
-    print("RMSE Scores: %0.4f (+/- %0.2f)" %
-        (blood_rmse_scores.mean(), blood_rmse_scores.std()))
-
-    print("Brain data:")
-    print("R2 Scores: %0.4f (+/- %0.2f)" %
-        (brain_r2_scores.mean(), brain_r2_scores.std()))
-    print("RMSE Scores: %0.4f (+/- %0.2f)" %
-        (brain_rmse_scores.mean(), brain_rmse_scores.std()))
 
 
 def get_brainblood_csv(workbookpath, csvfilepath):
@@ -77,6 +29,7 @@ def get_brainblood_csv(workbookpath, csvfilepath):
     print(brain_df.columns.to_list())
     df = pd.concat([blood_df, brain_df], axis=1)
     df.to_csv(csvfilepath, encoding='utf-8')
+
 
 def calculate_blood_brain_ratio(raw_csvfilepath, ratio_csvfilepath):
     raw_df = pd.read_csv(raw_csvfilepath, index_col=[0, 1])
@@ -125,16 +78,34 @@ def calculate_blood_brain_ratio(raw_csvfilepath, ratio_csvfilepath):
         blood_num = value[1][1]
         ratio = value[1][2]
         max_ratio_list.append([index, smiles, brain_num, blood_num, ratio, time])
-    df = pd.DataFrame(data=max_ratio_list, columns=['Compound index', 'SMILES', 'Brain', 'Blood', 'Brain/Blood', 'Reach time'])
+    df = pd.DataFrame(data=max_ratio_list,
+                      columns=['Compound index', 'SMILES', 'Brain', 'Blood', 'Brain/Blood', 'Reach time'])
     df.to_csv(ratio_csvfilepath, index=False)
+
 
 def calculate_desc(srcfile, dstfile):
     df = pd.read_csv(srcfile)
+    # Mordred
     featurizer = dc.feat.MordredDescriptors(ignore_3D=True)
     SMILES = df['SMILES']
-    X = []
+    X1 = []
     for smiles in SMILES:
-        X.append(featurizer.featurize(smiles)[0])
+        X1.append(featurizer.featurize(smiles)[0])
+    X1 = pd.DataFrame(data=X1)
+    # MACCS
+    X2 = []
+    featurizer = dc.feat.MACCSKeysFingerprint()
+    for smiles in SMILES:
+        X2.append(featurizer.featurize(smiles)[0])
+    X2 = pd.DataFrame(data=X2)
+    # ECFP
+    X3 = []
+    featurizer = dc.feat.CircularFingerprint(size=2048, radius=4)
+    for smiles in SMILES:
+        X3.append(featurizer.featurize(smiles)[0])
+    X3 = pd.DataFrame(data=X3)
+    X = pd.concat([X1, X2, X3], axis=1)
+
     blood = df['Blood']
     brain = df['Brain']
     ratio = df['Brain/Blood']
@@ -144,6 +115,7 @@ def calculate_desc(srcfile, dstfile):
     df.insert(2, 'Brain', brain)
     df.insert(3, 'Ratio', ratio)
     df.to_csv(dstfile, index=False)
+
 
 def get_X_Y(csvfile):
     df = pd.read_csv(csvfile)
@@ -160,86 +132,120 @@ def get_X_Y(csvfile):
     SMILES = df['SMILES']
     return pd.DataFrame(X).astype('float64'), blood_y, brain_y, ratio_y, SMILES
 
-def train_model(blood_X, brain_X, blood_y, brain_y, ratio_y, model_type=None, cv_times=5):
+
+def train_model(X, y, model_type=None, param_name=None, cv_times=10):
+    if model_type is None or model_type not in cfg.model_enum:
+        raise ValueError
+    params = cfg.model_params.get(model_type)
+    # 获取模型类型及其参数并初始化
+    if model_type == cfg.model_enum[0]:  # XGB
+        model = XGBRegressor(**params.get(param_name))
+    elif model_type == cfg.model_enum[1]:  # LGBM
+        model = LGBMRegressor(**params.get(param_name))
+    elif model_type == cfg.model_enum[2]:  # SVM
+        model = SVR(**params.get(param_name))
+    elif model_type == cfg.model_enum[3]:  # RF
+        model = RF(**params.get(param_name))
+    elif model_type == cfg.model_enum[4]:  # MLP
+        model = MLP(**params.get(param_name))
+
+    cv = KFold(n_splits=cv_times, shuffle=True)
+
+    r2_scores = np.empty(cv_times)
+    rmse_scores = np.empty(cv_times)
+    print(f"Model type: {model_type}, param name: {param_name}")
+
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2)
+
+    for idx, (train_idx, test_idx) in enumerate(cv.split(X_train, y_train)):
+        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y[train_idx], y[test_idx]
+
+        if model_type == cfg.model_enum[0]:  # XGB
+            model.fit(X_train, y_train, eval_set=[(X_test, y_test)], early_stopping_rounds=100, verbose=False)
+        elif model_type == cfg.model_enum[1]:  # LGBM
+            callbacks = [lgb.log_evaluation(period=0)]
+            model.fit(X_train, y_train, eval_set=[(X_test, y_test)], callbacks=callbacks)
+        # elif model_type == cfg.model_enum[2]:   #SVM
+        #     model.fit(X_train, y_train)
+        # elif model_type == cfg.model_enum[3]:   #RF
+        #     # print(X_train)
+        #     model.fit(X_train, y_train)
+        else:
+            model.fit(X_train, y_train)
+        preds = model.predict(X_test)
+
+        r2 = r2_score(y_test, preds)
+        r2_scores[idx] = r2
+
+        rmse = np.sqrt(mean_squared_error(y_test, preds))
+        rmse_scores[idx] = rmse
+
+    preds = model.predict(X_val)
+    val_r2 = r2_score(y_val, preds)
+    val_rmse = np.sqrt(mean_squared_error(y_val, preds))
+    # print("Validation r2: ", val_r2)
+    # print("Validation rmse: ", val_rmse)
+
+    return r2_scores, rmse_scores, val_r2, val_rmse
+
+
+def train_ratio_model(X, y, model_type=None, cv_times=5):
     if model_type is None:
         raise ValueError
     # 获取模型类型及其参数并初始化
-    if model_type == cfg.model_enum[0]: #XGB
-        params = cfg.model_params.get('XGB')
-        blood_model = XGBRegressor(**params.get('blood_params'))
-        brain_model = XGBRegressor(**params.get('brain_params'))
-    elif model_type == cfg.model_enum[1]: #LGBM
-        params = cfg.model_params.get('LGBM')
-        blood_model = LGBMRegressor(**params.get('blood_params'))
-        brain_model = LGBMRegressor(**params.get('brain_params'))
-    elif model_type == cfg.model_enum[2]: #SVM
-        params = cfg.model_params.get('SVM')
-        blood_model = SVR(**params.get('blood_params'))
-        brain_model = SVR(**params.get('brain_params'))
-    elif model_type == cfg.model_enum[3]: #RF
-        params = cfg.model_params.get('RF')
-        blood_model = RF(**params.get('blood_params'))
-        brain_model = RF(**params.get('brain_params'))
-        
+    if model_type == cfg.model_enum[0]:  # XGB
+        params = {
+            'n_estimators': 2300,
+            'learning_rate': 0.008,
+            'max_depth': 22,
+            'lambda': 0.8777358996534239,
+            'alpha': 0.02495760060129463,
+            'min_child_weight': 12,
+            'gamma': 20,
+            'colsample_bytree': 0.1,
+            'colsample_bylevel': 0.4,
+            'colsample_bynode': 0.5,
+        }
+        model = XGBRegressor(**params)
+    elif model_type == cfg.model_enum[1]:  # LGBM
+        params = None
+        model = LGBMRegressor(**params)
+    elif model_type == cfg.model_enum[2]:  # SVM
+        params = None
+        model = SVR(**params)
+    elif model_type == cfg.model_enum[3]:  # RF
+        params = None
+        model = RF(**params)
+
     cv = KFold(n_splits=cv_times, shuffle=True)
 
-    blood_r2_scores = np.empty(cv_times)
-    blood_rmse_scores = np.empty(cv_times)
-    brain_r2_scores = np.empty(cv_times)
-    brain_rmse_scores = np.empty(cv_times)
+    r2_scores = np.empty(cv_times)
+    rmse_scores = np.empty(cv_times)
     print(model_type)
-    
-    # Blood
-    for idx, (train_idx, test_idx) in enumerate(cv.split(blood_X, blood_y)):
-        X_train, X_test = blood_X.iloc[train_idx], blood_X.iloc[test_idx]
-        y_train, y_test = blood_y[train_idx], blood_y[test_idx]
-        
-        #TODO: SVM, RF
-        if model_type == cfg.model_enum[0]: #XGB
-            blood_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], early_stopping_rounds=100, verbose=False)
-        elif model_type == cfg.model_enum[1]:   #LGBM
+
+    for idx, (train_idx, test_idx) in enumerate(cv.split(X, y)):
+        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y[train_idx], y[test_idx]
+
+        if model_type == cfg.model_enum[0]:  # XGB
+            model.fit(X_train, y_train, eval_set=[(X_test, y_test)], early_stopping_rounds=100, verbose=False)
+        elif model_type == cfg.model_enum[1]:  # LGBM
             callbacks = [lgb.log_evaluation(period=0)]
-            blood_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], callbacks=callbacks)
-        elif model_type == cfg.model_enum[2]:   #SVM
-            
-            blood_model.fit(X_train, y_train)
-        elif model_type == cfg.model_enum[3]:   #RF
+            model.fit(X_train, y_train, eval_set=[(X_test, y_test)], callbacks=callbacks)
+        elif model_type == cfg.model_enum[2]:  # SVM
+
+            model.fit(X_train, y_train)
+        elif model_type == cfg.model_enum[3]:  # RF
             # print(X_train)
-            blood_model.fit(X_train, y_train)
-        
-        preds = blood_model.predict(X_test)
+            model.fit(X_train, y_train)
+
+        preds = model.predict(X_test)
 
         r2 = r2_score(y_test, preds)
-        blood_r2_scores[idx] = r2
+        r2_scores[idx] = r2
 
         rmse = np.sqrt(mean_squared_error(y_test, preds))
-        blood_rmse_scores[idx] = rmse
-    # Brain
-    for idx, (train_idx, test_idx) in enumerate(cv.split(brain_X, brain_y)):
-        X_train, X_test = brain_X.iloc[train_idx], brain_X.iloc[test_idx]
-        y_train, y_test = brain_y[train_idx], brain_y[test_idx]
+        rmse_scores[idx] = rmse
 
-        if model_type == cfg.model_enum[0]: #XGB
-            brain_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], early_stopping_rounds=100, verbose=False)
-        elif model_type == cfg.model_enum[1]:   #LGBM
-            callbacks = [lgb.log_evaluation(period=0)]
-            brain_model.fit(X_train, y_train, eval_set=[(X_test, y_test)], callbacks=callbacks)
-        elif model_type == cfg.model_enum[2]:   #SVM
-            
-            brain_model.fit(X_train, y_train)
-        elif model_type == cfg.model_enum[3]:   #RF
-            
-            brain_model.fit(X_train, y_train)
-
-        preds = brain_model.predict(X_test)
-
-        r2 = r2_score(y_test, preds)
-        brain_r2_scores[idx] = r2
-
-        rmse = np.sqrt(mean_squared_error(y_test, preds))
-        brain_rmse_scores[idx] = rmse
-    
-    return blood_r2_scores, blood_rmse_scores, brain_r2_scores,brain_rmse_scores
-
-if __name__ == '__main__':
-    main()
+    return r2_scores, rmse_scores
