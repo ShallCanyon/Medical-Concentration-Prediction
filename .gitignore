@@ -8,3 +8,5 @@
 *.rar
 DataFrame.xlsx
 __pycache__/global_config.cpython-37.pyc
+/.idea
+/.vscode
