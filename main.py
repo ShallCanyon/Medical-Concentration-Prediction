@@ -13,7 +13,7 @@ def main():
     # 计算出药物的Mordred描述符以及最大脑血比的数据集
     desc_csvfilepath = cfg.desc_csvfilepath
     MACCS_csvfilepath = cfg.MACCS_csvfilepath
-    ECCF_csvfilepath = cfg.ECCF_csvfilepath
+    ECFP_csvfilepath = cfg.ECFP_csvfilepath
     generate_new_data = [False, False, False]
 
     print("Running...")
@@ -27,12 +27,12 @@ def main():
 
     if not os.path.exists(desc_csvfilepath) or generate_new_data[2]:
         print("Calculating descriptors...")
-        calculate_desc(ratio_csvfilepath, desc_csvfilepath)
+        calculate_desc(ratio_csvfilepath, ECFP_csvfilepath)
 
     # calculate_desc(ratio_csvfilepath, ECCF_csvfilepath)
     start_training = True
     if start_training:
-        X, blood_y, brain_y, ratio_y, SMILES = get_X_Y(ECCF_csvfilepath)
+        X, blood_y, brain_y, ratio_y, SMILES = get_X_Y(cfg.padel_csvfilepath)
         feature_select = True
         if feature_select:
             # 特征筛选
