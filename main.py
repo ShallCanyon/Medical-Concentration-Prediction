@@ -38,21 +38,20 @@ def main():
             # 特征筛选
             blood_X = X.iloc[:, cfg.blood_fea]
             brain_X = X.iloc[:, cfg.brain_fea]
+            ratio_X = X.iloc[:, cfg.X_fea]
         else:
             blood_X = X
             brain_X = X
 
         print("Start training model...")
 
-        # r2_scores, rmse_scores = train_ratio_model(X.iloc[:, cfg.X_fea], ratio_y, model_type=cfg.model_type)
-        # print("Blood data:")
-        # print("R2 Scores: %0.4f (+/- %0.2f)" %
-        #     (r2_scores.mean(), r2_scores.std()))
-        # print("RMSE Scores: %0.4f (+/- %0.2f)" %
-        #     (rmse_scores.mean(), rmse_scores.std()))
-
+       
         blood_r2_scores, blood_rmse_scores, blood_val_r2, blood_val_rmse = train_model(blood_X, blood_y, cfg.model_type, param_name='blood_params')
+
         brain_r2_scores, brain_rmse_scores, brain_val_r2, brain_val_rmse = train_model(brain_X, brain_y, cfg.model_type, param_name='brain_params')
+
+        ratio_r2_scores, ratio_rmse_scores, ratio_val_r2, ratio_val_rmse = \
+            train_model(ratio_X, ratio_y, cfg.model_type, param_name='ratio_params')
 
         print("Blood data:")
         print("\tR2 Scores: %0.4f (+/- %0.2f)" %
@@ -62,7 +61,9 @@ def main():
         print("Validation: ")
         print("\tR2 Scores: %0.4f" % blood_val_r2)
         print("\tRMSE Scores: %0.4f" % blood_val_rmse)
+
         print()
+        
         print("Brain data:")
         print("\tR2 Scores: %0.4f (+/- %0.2f)" %
               (brain_r2_scores.mean(), brain_r2_scores.std()))
@@ -71,6 +72,17 @@ def main():
         print("Validation: ")
         print("\tR2 Scores: %0.4f" % brain_val_r2)
         print("\tRMSE Scores: %0.4f" % brain_val_rmse)
+
+        print()
+        
+        print("Ratio data:")
+        print("\tR2 Scores: %0.4f (+/- %0.2f)" %
+              (ratio_r2_scores.mean(), ratio_r2_scores.std()))
+        print("\tRMSE Scores: %0.4f (+/- %0.2f)" %
+              (ratio_rmse_scores.mean(), ratio_rmse_scores.std()))
+        print("Validation: ")
+        print("\tR2 Scores: %0.4f" % ratio_val_r2)
+        print("\tRMSE Scores: %0.4f" % ratio_val_rmse)
 
 
 if __name__ == '__main__':
