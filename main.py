@@ -1,6 +1,7 @@
 import global_config as cfg
 import os
-from model_training import get_brainblood_csv, calculate_blood_brain_ratio, calculate_desc, get_X_Y, train_model
+from model_training import train_model
+from data_preprocess import get_brainblood_csv, calculate_blood_brain_ratio, calculate_desc, get_X_Y
 
 
 def main():
@@ -27,7 +28,8 @@ def main():
 
     if not os.path.exists(desc_csvfilepath) or generate_new_data[2]:
         print("Calculating descriptors...")
-        calculate_desc(ratio_csvfilepath, ECFP_csvfilepath)
+        calculate_desc(ratio_csvfilepath, desc_csvfilepath,
+                       Mordred=True, MACCS=False, ECFP=False)
 
     # calculate_desc(ratio_csvfilepath, ECCF_csvfilepath)
     start_training = True
@@ -45,44 +47,49 @@ def main():
 
         print("Start training model...")
 
-       
-        blood_r2_scores, blood_rmse_scores, blood_val_r2, blood_val_rmse = train_model(blood_X, blood_y, cfg.model_type, param_name='blood_params')
-
-        brain_r2_scores, brain_rmse_scores, brain_val_r2, brain_val_rmse = train_model(brain_X, brain_y, cfg.model_type, param_name='brain_params')
-
-        ratio_r2_scores, ratio_rmse_scores, ratio_val_r2, ratio_val_rmse = \
-            train_model(ratio_X, ratio_y, cfg.model_type, param_name='ratio_params')
+        training_result = train_model(blood_X, blood_y, cfg.model_type, param_name='blood_params')
 
         print("Blood data:")
         print("\tR2 Scores: %0.4f (+/- %0.2f)" %
-              (blood_r2_scores.mean(), blood_r2_scores.std()))
+              (training_result.get("R2").mean(), training_result.get("R2").std()))
         print("\tRMSE Scores: %0.4f (+/- %0.2f)" %
-              (blood_rmse_scores.mean(), blood_rmse_scores.std()))
+              (training_result.get("RMSE").mean(), training_result.get("RMSE").std()))
+        print("\tNRMSE Scores: %0.4f (+/- %0.2f)" %
+              (training_result.get("NRMSE").mean(), training_result.get("NRMSE").std()))
         print("Validation: ")
-        print("\tR2 Scores: %0.4f" % blood_val_r2)
-        print("\tRMSE Scores: %0.4f" % blood_val_rmse)
+        print("\tR2 Scores: %0.4f" % training_result.get("Val_R2"))
+        print("\tRMSE Scores: %0.4f" % training_result.get("Val_RMSE"))
+        print("\tNRMSE Scores: %0.4f" % training_result.get("Val_NRMSE"))
 
         print()
-        
+
+        training_result = train_model(brain_X, brain_y, cfg.model_type, param_name='brain_params')
         print("Brain data:")
         print("\tR2 Scores: %0.4f (+/- %0.2f)" %
-              (brain_r2_scores.mean(), brain_r2_scores.std()))
+              (training_result.get("R2").mean(), training_result.get("R2").std()))
         print("\tRMSE Scores: %0.4f (+/- %0.2f)" %
-              (brain_rmse_scores.mean(), brain_rmse_scores.std()))
+              (training_result.get("RMSE").mean(), training_result.get("RMSE").std()))
+        print("\tNRMSE Scores: %0.4f (+/- %0.2f)" %
+              (training_result.get("NRMSE").mean(), training_result.get("NRMSE").std()))
         print("Validation: ")
-        print("\tR2 Scores: %0.4f" % brain_val_r2)
-        print("\tRMSE Scores: %0.4f" % brain_val_rmse)
+        print("\tR2 Scores: %0.4f" % training_result.get("Val_R2"))
+        print("\tRMSE Scores: %0.4f" % training_result.get("Val_RMSE"))
+        print("\tNRMSE Scores: %0.4f" % training_result.get("Val_NRMSE"))
 
         print()
-        
+
+        training_result = train_model(ratio_X, ratio_y, cfg.model_type, param_name='ratio_params')
         print("Ratio data:")
         print("\tR2 Scores: %0.4f (+/- %0.2f)" %
-              (ratio_r2_scores.mean(), ratio_r2_scores.std()))
+              (training_result.get("R2").mean(), training_result.get("R2").std()))
         print("\tRMSE Scores: %0.4f (+/- %0.2f)" %
-              (ratio_rmse_scores.mean(), ratio_rmse_scores.std()))
+              (training_result.get("RMSE").mean(), training_result.get("RMSE").std()))
+        print("\tNRMSE Scores: %0.4f (+/- %0.2f)" %
+              (training_result.get("NRMSE").mean(), training_result.get("NRMSE").std()))
         print("Validation: ")
-        print("\tR2 Scores: %0.4f" % ratio_val_r2)
-        print("\tRMSE Scores: %0.4f" % ratio_val_rmse)
+        print("\tR2 Scores: %0.4f" % training_result.get("Val_R2"))
+        print("\tRMSE Scores: %0.4f" % training_result.get("Val_RMSE"))
+        print("\tNRMSE Scores: %0.4f" % training_result.get("Val_NRMSE"))
 
 
 if __name__ == '__main__':
