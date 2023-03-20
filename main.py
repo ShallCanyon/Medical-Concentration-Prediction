@@ -1,12 +1,17 @@
 import numpy as np
+import pandas as pd
 
+import data_preprocess
 import global_config as cfg
 import os
-from model_training import train_model
+from model_training import train_model, model_training
 from data_preprocess import *
+from params_tuning import ParamsTuning
+
+logger = cfg.logger
 
 
-def main():
+def ratio_predict():
     # 原始的集成数据集
     workbookpath = cfg.workbookpath
     # 从原始数据集中挑选出脑部与血液浓度的数据集
@@ -81,43 +86,41 @@ def main():
         #
         # print()
 
-        r2_list = []
-        rmse_list = []
-        val_r2_list = []
-        val_rmse_list = []
-        for i in range(10):
-            training_result = train_model(ratio_X, ratio_y, cfg.model_type, param_name='ratio_params')
-            print(f"Ratio data of epoch {i + 1}:")
-            print("\tR2 Scores: %0.4f (+/- %0.2f)" %
-                  (training_result.get("R2").mean(), training_result.get("R2").std()))
-            r2_list.append(training_result.get("R2").mean())
-            print("\tRMSE Scores: %0.4f (+/- %0.2f)" %
-                  (training_result.get("RMSE").mean(), training_result.get("RMSE").std()))
-            rmse_list.append(training_result.get("RMSE").mean())
-
-            # print("\tNRMSE Scores: %0.4f (+/- %0.2f)" %
-            #       (training_result.get("NRMSE").mean(), training_result.get("NRMSE").std()))
-            print("Validation: ")
-            print("\tR2 Scores: %0.4f" % training_result.get("Val_R2"))
-            val_r2_list.append(training_result.get("Val_R2"))
-            print("\tRMSE Scores: %0.4f" % training_result.get("Val_RMSE"))
-            val_rmse_list.append(training_result.get("Val_RMSE"))
-            # print("\tNRMSE Scores: %0.4f" % training_result.get("Val_NRMSE"))
-        print("\nSummery:")
-        print("\tTotal R2 Scores: %0.3f" % np.array(r2_list).mean())
-        print("\tTotal RMSE Scores: %0.3f" % np.array(rmse_list).mean())
-        print("\tTotal Validation R2 Scores: %0.3f" % np.array(val_r2_list).mean())
-        print("\tTotal Validation RMSE Scores: %0.3f" % np.array(val_rmse_list).mean())
-
 
 if __name__ == '__main__':
-    # main()
+    # ratio_predict()
     # raw_csvfilepath = cfg.raw_csvfilepath
-    #
-    # brain_csv = f"./result/{cfg.filetime}/MaxBrain.csv"
+
+    # brain_csv = f"./processed_data/{cfg.filetime}/MaxBrain.csv"
     # select_max_organ_data(raw_csvfilepath, brain_csv, 'brain')
 
     organ_name = 'brain'
-    certain_time = 30
-    organ_csv = f"./result/{cfg.filetime}/{organ_name}-{certain_time}min.csv"
-    select_certain_time_organ_data(cfg.workbookpath, organ_csv, organ_name, certain_time)
+    certain_time = 60
+    organ_csv = f"./{cfg.parent_folder}/{cfg.filetime}/{organ_name}-{certain_time}min.csv"
+    desc_csv = f"./{cfg.parent_folder}/{cfg.filetime}/{organ_name}-{certain_time}min-desc.csv"
+    if not os.path.exists(organ_csv):
+        select_certain_time_organ_data(cfg.workbookpath, organ_csv, organ_name, certain_time)
+    if not os.path.exists(desc_csv):
+        data_df, empty_df = split_null_from_csv(organ_csv)
+        desc_df = data_preprocess.calculate_desc(data_df)
+        desc_df.to_csv(desc_csv, index=False)
+
+    X, y, _ = read_single_column_data(desc_csv)
+    sc = StandardScaler()
+    X = pd.DataFrame(sc.fit_transform(X))
+    logger.info(f"X shape: {X.shape}")
+
+    tuning = True
+    model_type = cfg.model_enum[1]
+    logger.info("Model type: " + model_type)
+    # param_name = 'ratio_params'
+    # model_params = cfg.model_params.get(model_type).get(param_name)
+
+    if tuning:
+        pt = ParamsTuning(model_type=model_type, n_trials=50, study_name="Tuning Study")
+        study = pt.tune_params(X, y)
+        logger.info("Best parameters: ", study.best_params)
+        model = model_training(X, y, model_type=model_type, model_params=study.best_params)
+        # model.save_model()
+    else:
+        model_training(X, y, model_type=model_type)

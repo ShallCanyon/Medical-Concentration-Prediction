@@ -1,25 +1,20 @@
 import os
 import time
 import deepchem as dc
+import pandas as pd
 import numpy as np
 import torch
+from sklearn.preprocessing import StandardScaler
 
+import data_preprocess
 import global_config as cfg
-import DataLogger
 from deepchem import feat, data, metrics, hyper
 from deepchem.models import AttentiveFPModel, optimizers, TorchModel, GCNModel
 from sklearn.model_selection import train_test_split
-from data_preprocess import get_X_Y_by_ratio, get_SMILE_Y
+from data_preprocess import get_X_Y_by_ratio, get_SMILE_Y, split_null_from_csv
 
-# global settings
-cur_time = time.localtime()
-parent_folder = f"./Models/{time.strftime('%Y%m%d', cur_time)}"
-save_folder = f"{parent_folder}/{time.strftime('%H%M%S', cur_time)}"
-if not os.path.exists(parent_folder):
-    os.mkdir(parent_folder)
-if not os.path.exists(save_folder):
-    os.mkdir(save_folder)
-logger = DataLogger.DataLogger(f"{save_folder}/logger.txt").getlog()
+
+logger = cfg.logger
 
 
 def featurize(SMILES, is_torch=False):
@@ -47,16 +42,15 @@ def get_datasets(X, y, test_size=0.1, valid_size=0.1):
 
 def param_tuning(train_dataset, valid_dataset):
     def model_builder(**model_params):
-        num_layers = model_params['num_layers']
-        dropout = model_params['dropout']
-        lr = model_params['learning_rate']
-        # number_atom_features = model_params['number_atom_features']
-        graph_feat_size = model_params['graph_feat_size']
-        # number_bond_features = model_params['number_bond_features']
-        batch_size = model_params['batch_size']
-        num_timesteps = model_params['num_timesteps']
+        num_layers = model_params.get('num_layers', 2)
+        dropout = model_params.get('dropout', 0.0)
+        lr = model_params.get('learning_rate', 0.002)
+        graph_feat_size = model_params.get('graph_feat_size', 200)
+        batch_size = model_params.get('batch_size', 16)
+        num_timesteps = model_params.get('num_timesteps', 2)
 
-        learning_rate = optimizers.ExponentialDecay(lr, 0.9, 200)
+        # learning_rate = optimizers.ExponentialDecay(lr, 0.9, 200)
+        learning_rate = optimizers.ExponentialDecay(lr, 0.9, 500)
         optimizer = optimizers.Adam(learning_rate=learning_rate)
         model = AttentiveFPModel(mode='regression', n_tasks=1, num_timesteps=num_timesteps,
                                  dropout=dropout,
@@ -74,36 +68,23 @@ def param_tuning(train_dataset, valid_dataset):
     optimizer = hyper.GridHyperparamOpt(model_builder)
     metric = metrics.Metric(metrics.pearson_r2_score)
     params_dict = {
-        "num_layers": [3],
-        "dropout": [0.08],
-        "learning_rate": [0.001],
-        # "number_atom_features": [10, 20, 30, 40, 50],
-        "graph_feat_size": [500],
-        # "number_bond_features": [10, 12, 14, 16, 18, 20],
+        # "num_layers": [2, 3, 4],
+        # "dropout": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
+        # "learning_rate": [0.001, 0.002, 0.01, 0.02],
+        # "graph_feat_size": [200, 300, 500, 700, 1000],
+        # "batch_size": [16, 32, 64, 128],
+        # "num_timesteps": [2, 3, 4],
+
+        "num_layers": [2],
+        "dropout": [0.0],
+        "learning_rate": [0.002],
+        "graph_feat_size": [700],
         "batch_size": [16],
-        "num_timesteps": [2, 3, 4, 5, 6]
+        "num_timesteps": [3]
     }
     best_model, best_hyperparams, all_results = \
         optimizer.hyperparam_search(params_dict, train_dataset, valid_dataset, metric, max_iter=2)
     return best_model, best_hyperparams, all_results
-
-
-def getMetaLearner(large_datasets):
-    # learner = metalearning.MetaLearner()
-    # learner.compute_model(inputs=large_datasets, variables=None, training=True)
-    # return learner
-    pass
-
-
-# def FS_Learning(large_datasets):
-#     learner = getMetaLearner(large_datasets)
-#     maml = metalearning.MAML(learner=learner,
-#                              learning_rate=0.001,
-#                              optimization_steps=1,
-#                              meta_batch_size=10,
-#                              model_dir="./metalearning")
-#     maml.fit(steps=10)
-#     maml.train_on_current_task()
 
 
 def custom_metric_func(digit):
@@ -136,7 +117,8 @@ def train_GCNModel(train_dataset, valid_dataset, nb_epoch=300, lr=0.001, model_d
     # best_model, best_hyperparams, all_results = param_tuning(train_dataset, valid_dataset)
     # print("Best_hyperparams: ", best_hyperparams)
 
-    learning_rate = optimizers.ExponentialDecay(lr, 0.9, 200)
+    # learning_rate = optimizers.ExponentialDecay(lr, 0.9, 200)
+    learning_rate = optimizers.ExponentialDecay(0.002, 0.9, 200)
     optimizer = optimizers.Adam(learning_rate=learning_rate)
     # best_model = GCNModel(mode='regression',
     #                       n_tasks=1,
@@ -162,8 +144,17 @@ def train_GCNModel(train_dataset, valid_dataset, nb_epoch=300, lr=0.001, model_d
     #                               # loss=torch.nn.SmoothL1Loss(),
     #                               model_dir=model_dir)
     """param of brain"""
-    best_model = AttentiveFPModel(mode='regression', num_layers=3, n_tasks=1, dropout=0.08,
-                                  graph_feat_size=500, num_timesteps=2, number_atom_features=30,
+    # best_model = AttentiveFPModel(mode='regression', num_layers=3, n_tasks=1, dropout=0.08,
+    #                               graph_feat_size=500, num_timesteps=2, number_atom_features=30,
+    #                               number_bond_features=11, self_loop=True,
+    #                               batch_size=16, device='cuda',
+    #                               learning_rate=learning_rate,
+    #                               # optimizer=optimizer,
+    #                               # loss=torch.nn.SmoothL1Loss(),
+    #                               model_dir=model_dir)
+    """param of 60min brain"""
+    best_model = AttentiveFPModel(mode='regression', num_layers=2, n_tasks=1, dropout=0.0,
+                                  graph_feat_size=700, num_timesteps=3, number_atom_features=30,
                                   number_bond_features=11, self_loop=True,
                                   batch_size=16, device='cuda',
                                   learning_rate=learning_rate,
@@ -194,44 +185,33 @@ def predict_on_model(model_dir, dataset):
     return scores
 
 
-def train_models(X, y, epoch=5, tuning_mode=False):
+def train_AFP_model(X, y, epoch=5, tuning_mode=False):
     lr = [0.003, 0.002, 0.001, 0.0005, 0.0002, 0.0001]
-    # Ratio
-    for i in range(epoch):
+    best_params = None
+    if tuning_mode is True:
         train_dataset, test_dataset, valid_dataset = get_datasets(X=X, y=y)
-        model_dir = f"{save_folder}/model{i}"
+        best_model, best_hyperparams, all_results = param_tuning(train_dataset, valid_dataset)
+        # logger.info(best_model)
+        logger.info(best_hyperparams)
+        # logger.info(all_results)
+        best_params = best_hyperparams
+    else:
+        for i in range(epoch):
+            train_dataset, test_dataset, valid_dataset = get_datasets(X=X, y=y)
+            model_dir = f"{cfg.model_save_folder}/model{i}"
 
-        # splitter = dc.splits.RandomSplitter()
-        # # print(type(train_dataset))
-        # cv_train = splitter.k_fold_split(train_dataset, 5)
-        # print(cv_train)
-
-        if not tuning_mode:
+            # splitter = dc.splits.RandomSplitter()
+            # # print(type(train_dataset))
+            # cv_train = splitter.k_fold_split(train_dataset, 5)
+            # print(cv_train)
             train_scores, valid_scores, model, metric_list = \
                 train_GCNModel(train_dataset, valid_dataset, lr=lr[1], model_dir=model_dir)
             test_scores = model.evaluate(test_dataset, metric_list)
-            logger.info(f"Model{i} result:")
+            logger.info(f"Model{i} processed_data:")
             logger.info(f"Learning rate:{lr[1]}")
             logger.info(f"Training: {train_scores}")
             logger.info(f"Valid: {valid_scores}")
             logger.info(f"Test: {test_scores}\n")
-        else:
-            best_model, best_hyperparams, all_results = param_tuning(train_dataset, valid_dataset)
-            logger.info(best_model)
-            logger.info(best_hyperparams)
-            logger.info(all_results)
-
-    # # Blood
-    # train_scores, valid_scores = train_GCNModel(*get_datasets(X=X, y=blood_y))
-    # print("Blood result:")
-    # print(f"Training: {train_scores}")
-    # print(f"Valid: {valid_scores}")
-    #
-    # # Brain
-    # train_scores, valid_scores = train_GCNModel(*get_datasets(X=X, y=brain_y))
-    # print("Brain result:")
-    # print(f"Training: {train_scores}")
-    # print(f"Valid: {valid_scores}")
 
 
 if __name__ == '__main__':
@@ -242,24 +222,42 @@ if __name__ == '__main__':
     # tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
     # tf.config.experimental.set_memory_growth(gpus[0], True)
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-    """ 预测比值
+    # 预测比值
+    """ 
     _, blood_y, brain_y, ratio_y, SMILES = get_X_Y_by_ratio(cfg.padel_csvfilepath)
     X = featurize(SMILES, is_torch=True)
     # y = brain_y
     train_models(X, ratio_y, epoch=5, tuning_mode=False)
     """
 
-    """ 预测最大脑部
-    brain_csv = f"./result/{cfg.filetime}/MaxBrain.csv"
+    # 预测最大脑部
+    """ 
+    brain_csv = f"./processed_data/{cfg.filetime}/MaxBrain.csv"
     SMILES, y = get_SMILE_Y(brain_csv)
 
     X = featurize(SMILES, is_torch=True)
     train_models(X, y, epoch=5, tuning_mode=False)
     """
 
-    brain_csv = f"./result/{cfg.filetime}/MaxBrain.csv"
-    SMILES, y = get_SMILE_Y(brain_csv)
+    # 预测30分脑部
+    # organ_name = 'brain'
+    # certain_time = 30
+    # organ_csv = f"./processed_data/{cfg.filetime}/{organ_name}-{certain_time}min.csv"
+    # data_df, empty_df = split_null_from_csv(organ_csv)
+    # SMILES, y = get_SMILE_Y(data_df, y_column=f'{organ_name} mean{certain_time}min')
+    #
+    # X = featurize(SMILES, is_torch=True)
+    # train_models(X, y, epoch=1, tuning_mode=True)
 
-    X = featurize(SMILES, is_torch=True)
-    train_models(X, y, epoch=5, tuning_mode=False)
+    # 预测60分脑部
+    organ_name = 'brain'
+    certain_time = 60
+    organ_csv = f"./{cfg.parent_folder}/{cfg.filetime}/{organ_name}-{certain_time}min.csv"
+    desc_csv = f"./{cfg.parent_folder}/{cfg.filetime}/{organ_name}-{certain_time}min-desc.csv"
+    _, y, smiles = data_preprocess.read_single_column_data(desc_csv)
+    X = featurize(smiles, is_torch=True)
+
+    tuning = False
+    logger.info("Model type: AttentiveFP")
+    train_AFP_model(X, y, epoch=5, tuning_mode=tuning)
 
