@@ -6,15 +6,16 @@ from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 
 def get_brainblood_csv(workbookpath, csvfilepath):
-    excel_df = pd.read_excel(workbookpath, index_col=[0, 1], engine='openpyxl')
-    # column_list = excel_df.columns.to_list()
-    # print(column_list)
-    blood_df = excel_df.loc[:, excel_df.columns.str.startswith('blood mean')]
-    brain_df = excel_df.loc[:, excel_df.columns.str.startswith('brain mean')]
-    # print(blood_df.columns.to_list())
-    # print(brain_df.columns.to_list())
-    df = pd.concat([blood_df, brain_df], axis=1)
-    df.to_csv(csvfilepath, encoding='utf-8')
+    # excel_df = pd.read_excel(workbookpath, index_col=[0, 1], engine='openpyxl')
+    # # column_list = excel_df.columns.to_list()
+    # # print(column_list)
+    # blood_df = excel_df.loc[:, excel_df.columns.str.startswith('blood mean')]
+    # brain_df = excel_df.loc[:, excel_df.columns.str.startswith('brain mean')]
+    # # print(blood_df.columns.to_list())
+    # # print(brain_df.columns.to_list())
+    # df = pd.concat([blood_df, brain_df], axis=1)
+    # df.to_csv(csvfilepath, encoding='utf-8')
+    select_multiple_organs_data(workbookpath, csvfilepath, organs_name=['blood', 'brain'])
 
 
 def calculate_blood_brain_ratio(raw_csvfilepath, ratio_csvfilepath):
@@ -69,14 +70,36 @@ def calculate_blood_brain_ratio(raw_csvfilepath, ratio_csvfilepath):
     df.to_csv(ratio_csvfilepath, index=False)
 
 
+def select_multiple_organs_data(root_filepath: str, target_csvfilepath: str, organs_name: list):
+    """
+    筛选多个器官的所有浓度数据
+
+    :param root_filepath: 源文件路径
+    :param target_csvfilepath: 目标csv文件路径
+    :param organs_name: 选定的器官名列表
+    """
+    if len(organs_name) == 0:
+        raise ValueError("Empty list error")
+    if root_filepath.endswith('xlsx') or root_filepath.endswith('xls'):
+        raw_df = pd.read_excel(root_filepath, index_col=[0, 1], engine='openpyxl')
+    elif root_filepath.endswith('csv'):
+        raw_df = pd.read_csv(root_filepath, index_col=[0, 1])
+    df_list = []
+    for organ_name in organs_name:
+        df = raw_df.loc[:, raw_df.columns.str.startswith(f'{organ_name} mean')]
+        df_list.append(df)
+    df = pd.concat(df_list, axis=1)
+    df.to_csv(target_csvfilepath, encoding='utf-8')
+
+
 def select_certain_time_organ_data(root_filepath: str, target_csvfilepath: str, organ_name: str, certain_time: int):
     """
     筛选出指定器官在指定时间的浓度数据
 
-    :param root_filepath:
-    :param target_csvfilepath:
-    :param organ_name:
-    :param certain_time:
+    :param root_filepath: 源文件路径
+    :param target_csvfilepath: 目标csv文件路径
+    :param organ_name: 选定的器官名
+    :param certain_time: 选定的时间点
     :return:
     """
     if root_filepath.endswith('xlsx') or root_filepath.endswith('xls'):
@@ -137,8 +160,21 @@ def select_max_organ_data(root_filepath: str, target_csvfilepath: str, organ_nam
     df.to_csv(target_csvfilepath, index=False)
 
 
-def calculate_desc(srcfile, dstfile, Mordred=True, MACCS=True, ECFP=True):
-    df = pd.read_csv(srcfile)
+def calculate_desc(datasrc, Mordred=True, MACCS=False, ECFP=False):
+    """
+    从datasrc中的SMILES计算描述符并返回带描述符的datasrc数据
+    :param datasrc: 需要计算的带SMILES的数据源，类型为str（指向数据源的csv文件）或者Dataframe或Series
+    :param Mordred: 启动Mordred描述符计算
+    :param MACCS: 启动MACCS分子指纹计算
+    :param ECFP: 启动ECFP分子指纹计算
+    :return: 带描述符的datasrc数据
+    """
+    if isinstance(datasrc, str):
+        df = pd.read_csv(datasrc)
+    elif isinstance(datasrc, pd.DataFrame or pd.Series):
+        df = datasrc
+    else:
+        raise ValueError("错误的datasrc类型")
     X = pd.DataFrame()
     SMILES = df['SMILES']
     # Mordred
@@ -166,15 +202,22 @@ def calculate_desc(srcfile, dstfile, Mordred=True, MACCS=True, ECFP=True):
         X3 = pd.DataFrame(data=X3)
         X = pd.concat([X, X3], axis=1)
     if not X.empty:
-        blood = df['Blood']
-        brain = df['Brain']
-        ratio = df['Brain/Blood']
-        df = pd.DataFrame(data=X)
-        df.insert(0, 'SMILES', SMILES)
-        df.insert(1, 'Blood', blood)
-        df.insert(2, 'Brain', brain)
-        df.insert(3, 'Ratio', ratio)
-        df.to_csv(dstfile, index=False)
+        # blood = df['Blood']
+        # brain = df['Brain']
+        # ratio = df['Brain/Blood']
+        # df = pd.DataFrame(data=X)
+        # df.insert(0, 'SMILES', SMILES)
+        # df.insert(1, 'Blood', blood)
+        # df.insert(2, 'Brain', brain)
+        # df.insert(3, 'Ratio', ratio)
+
+        # X.insert(0, 'SMILES', df['SMILES'])
+        # X.insert(1, 'data', df.iloc[:, [False, False, True]])
+
+        # df = pd.merge(df, X)
+        df = pd.concat([df, X], axis=1)
+        return df
+        # df.to_csv(dstfile, index=False)
     else:
         raise ValueError("Empty dataframe")
 
@@ -185,9 +228,7 @@ def get_X_Y_by_ratio(csvfile):
     # 去除含有无效值的列
     # df = df[~df.isin([np.nan, np.inf, -np.inf]).any(1)]
     # df = df.dropna(axis=0, how='any')
-    df = df.replace(["#NAME?", np.inf, -np.inf], np.nan)
-    df = df.dropna(axis=1)
-    df = df.drop_duplicates()
+    df = clean_desc_dataframe(df)
     print(df.shape)
     X = df.drop(['SMILES', 'Blood', 'Brain', 'Ratio'], axis=1)
     X = StandardScaler().fit_transform(X)
@@ -199,19 +240,62 @@ def get_X_Y_by_ratio(csvfile):
     return pd.DataFrame(X).astype('float64'), blood_y, brain_y, ratio_y, SMILES
 
 
-def get_SMILE_Y(csvfile):
-    df = pd.read_csv(csvfile)
+def get_SMILE_Y(df, smile_column='SMILES', y_column='Max Concentration'):
+    if isinstance(df, str):
+        df = pd.read_csv(df)
     print(df.shape)
     # 去除含有无效值的列
     # df = df[~df.isin([np.nan, np.inf, -np.inf]).any(1)]
     # df = df.dropna(axis=0, how='any')
-    df = df.replace(["#NAME?", np.inf, -np.inf], np.nan)
-    df = df.dropna(axis=1)
-    df = df.drop_duplicates()
+    df = clean_desc_dataframe(df)
     print(df.shape)
     # X = df.drop(['SMILES', 'Blood', 'Brain', 'Ratio'], axis=1)
     # X = StandardScaler().fit_transform(X)
     # # print(len(X))
-    y = df['Max Concentration'].ravel()
-    SMILES = df['SMILES']
+    y = df[y_column].ravel()
+    SMILES = df[smile_column]
     return SMILES, y
+
+
+def read_single_column_data(csv_file, smile_col=1, label_col=2, desc_start_col=3):
+    """
+    读取只有一列回归数据的csv文件，默认第一二列为药物index和SMILES，第三列为回归数据，其后为数据特征
+    :param csv_file: 只有一列回归数据的csv文件
+    :param smile_col: SMILES所在列号
+    :param label_col: 回归数据所在列号
+    :param desc_start_col: 数据特征起始列号
+    :return: 完成清洗并归一化的数据特征X, 回归数据y
+    """
+    df = pd.read_csv(csv_file)
+    df = clean_desc_dataframe(df)
+    X = df.iloc[:, desc_start_col:]
+    y = df.iloc[:, label_col]
+    smiles = df.iloc[:, smile_col]
+    return X, y, smiles
+
+
+def split_null_from_csv(root_csvfile):
+    """
+    将数据中的空数据与其他数据分开成两份dataframe
+
+    :param root_csvfile: 包含空数据的源csv文件
+    :return: 含数据的dataframe以及含空数据的dataframe
+    """
+    df = pd.read_csv(root_csvfile)
+    data_df = df.dropna(axis=0)
+    empty_df = df.drop(index=data_df.index)
+    return data_df.reset_index(drop=True), empty_df.reset_index(drop=True)
+
+
+def clean_desc_dataframe(df: pd.DataFrame, axis=1) -> pd.DataFrame:
+    """
+    清除描述符dataframe中的无效数据，避免发生报错
+
+    :param df: 包含无效数据的Dataframe
+    :param axis: axis为1时清除掉包含无效数据的列（默认），0时清除行
+    :return: 完成清除的Dataframe
+    """
+    df = df.replace(["#NAME?", np.inf, -np.inf], np.nan)
+    df = df.dropna(axis=axis)
+    df = df.drop_duplicates()
+    return df
