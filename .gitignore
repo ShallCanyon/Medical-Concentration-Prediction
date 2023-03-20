@@ -11,3 +11,5 @@ __pycache__/global_config.cpython-37.pyc
 /.idea
 /.vscode
 /processed_data
+/training_results
+/scripts
