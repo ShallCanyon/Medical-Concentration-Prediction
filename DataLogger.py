@@ -29,11 +29,11 @@ class DataLogger(object):
     """
     日志工具类
     :param log_file: 保存日志的文件路径
-    :param logger: 指定logger
+    :param logger_name: 指定logger的名字，不指定则默认为root
     """
-    def __init__(self, log_file, logger=None):
+    def __init__(self, log_file, logger_name=None):
         self.log_file = log_file
-        self.logger = logging.getLogger(logger)
+        self.logger = logging.getLogger(logger_name)
         self.logger.setLevel(logging.DEBUG)
 
         file_handler = logging.FileHandler(self.log_file, 'a', encoding='utf-8')
