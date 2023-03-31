@@ -1,12 +1,13 @@
 import numpy as np
 import pandas as pd
 
-import data_preprocess
+import DataPreprocess
 import global_config as cfg
 import os
 from model_training import train_model, model_training
-from data_preprocess import *
+from DataPreprocess import *
 from params_tuning import ParamsTuning
+from FeatureExtraction import FeatureExtraction
 
 logger = cfg.logger
 
@@ -35,8 +36,8 @@ def ratio_predict():
 
     if not os.path.exists(desc_csvfilepath) or generate_new_data[2]:
         print("Calculating descriptors...")
-        calculate_desc(ratio_csvfilepath, desc_csvfilepath,
-                       Mordred=True, MACCS=False, ECFP=False)
+        df = calculate_desc(ratio_csvfilepath, Mordred=True, MACCS=False, ECFP=False)
+        df.to_csv(desc_csvfilepath, index=False)
 
     # calculate_desc(ratio_csvfilepath, ECCF_csvfilepath)
     start_training = True
@@ -94,33 +95,42 @@ if __name__ == '__main__':
     # brain_csv = f"./processed_data/{cfg.filetime}/MaxBrain.csv"
     # select_max_organ_data(raw_csvfilepath, brain_csv, 'brain')
 
+    # 获取源数据
     organ_name = 'brain'
     certain_time = 60
     organ_csv = f"./{cfg.parent_folder}/{cfg.filetime}/{organ_name}-{certain_time}min.csv"
     desc_csv = f"./{cfg.parent_folder}/{cfg.filetime}/{organ_name}-{certain_time}min-desc.csv"
     if not os.path.exists(organ_csv):
-        select_certain_time_organ_data(cfg.workbookpath, organ_csv, organ_name, certain_time)
+        df = select_certain_time_organ_data(cfg.workbookpath, organ_name, certain_time)
+        df.to_csv(organ_csv, encoding='utf-8')
     if not os.path.exists(desc_csv):
-        data_df, empty_df = split_null_from_csv(organ_csv)
-        desc_df = data_preprocess.calculate_desc(data_df)
+        data_df, empty_df = split_null_from_data(pd.read_csv(organ_csv))
+        desc_df = calculate_desc(data_df)
         desc_df.to_csv(desc_csv, index=False)
 
-    X, y, _ = read_single_column_data(desc_csv)
+    tune_mode = False
+    feature_extract = True
+    mode_train_times = 50
+    # 数据预处理
+    X, y, _ = get_single_column_data(desc_csv)
     sc = StandardScaler()
     X = pd.DataFrame(sc.fit_transform(X))
     logger.info(f"X shape: {X.shape}")
+    if feature_extract:
+        X = FeatureExtraction(X=X, y=y).feature_extraction(RFE=True)
+        logger.info("Feature extracting...")
 
-    tuning = True
-    model_type = cfg.model_enum[1]
+    model_type = cfg.model_enum[0]
     logger.info("Model type: " + model_type)
     # param_name = 'ratio_params'
     # model_params = cfg.model_params.get(model_type).get(param_name)
 
-    if tuning:
+    if tune_mode:
+        logger.info("Start model pre-tuning...")
         pt = ParamsTuning(model_type=model_type, n_trials=50, study_name="Tuning Study")
         study = pt.tune_params(X, y)
         logger.info("Best parameters: ", study.best_params)
-        model = model_training(X, y, model_type=model_type, model_params=study.best_params)
+        model = model_training(X, y, model_type=model_type, model_params=study.best_params, train_times=mode_train_times)
         # model.save_model()
     else:
-        model_training(X, y, model_type=model_type)
+        model_training(X, y, model_type=model_type, train_times=mode_train_times)
