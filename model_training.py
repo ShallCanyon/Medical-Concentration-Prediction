@@ -165,53 +165,56 @@ def train_ratio_model(X, y, model_type=None, cv_times=5):
     return r2_scores, rmse_scores
 
 
-def model_training(X, y, model_type, model_params=None):
+def model_training(X, y, model_type, model_params=None, train_times=1):
     """
     使用指定的模型进行模型训练，训练结果由日志打印
     :param X: 传入的数据特征
     :param y: 传入的数据标签
     :param model_type: 指定的模型名
     :param model_params: 模型的参数，默认为空
+    :param train_times: 训练的模型数
     :return 返回训练完成的模型
     """
-    result, model = train_model(X, y, model_type=model_type, params=model_params)
-    logger.info("10 fold validation: ")
-    logger.info("\tR2 Scores: %0.3f (+/- %0.3f)" %
-                (result.get("R2").mean(), result.get("R2").std()))
-    logger.info("\tRMSE Scores: %0.3f (+/- %0.3f)" %
-                (result.get("RMSE").mean(), result.get("RMSE").std()))
+    if train_times == 1:
+        result, model = train_model(X, y, model_type=model_type, params=model_params)
+        logger.info("10 fold validation: ")
+        logger.info("\tR2 Scores: %0.3f (+/- %0.3f)" %
+                    (result.get("R2").mean(), result.get("R2").std()))
+        logger.info("\tRMSE Scores: %0.3f (+/- %0.3f)" %
+                    (result.get("RMSE").mean(), result.get("RMSE").std()))
 
-    logger.info("External validation: ")
-    logger.info("\tR2 Scores: %0.3f" % result.get("Val_R2"))
-    logger.info("\tRMSE Scores: %0.3f" % result.get("Val_RMSE"))
-    return model
+        logger.info("External validation: ")
+        logger.info("\tR2 Scores: %0.3f" % result.get("Val_R2"))
+        logger.info("\tRMSE Scores: %0.3f" % result.get("Val_RMSE"))
+        return model
+    else:
+        r2_list = []
+        rmse_list = []
+        val_r2_list = []
+        val_rmse_list = []
+        # model_params = cfg.model_params.get(model_type).get(param_name)
+        for i in range(train_times):
+            result, model = train_model(X, y, model_type=model_type, params=model_params)
+            logger.info(f"Epoch {i + 1}:")
+            logger.info("\tR2 Scores: %0.4f (+/- %0.2f)" %
+                        (result.get("R2").mean(), result.get("R2").std()))
+            r2_list.append(result.get("R2").mean())
+            logger.info("\tRMSE Scores: %0.4f (+/- %0.2f)" %
+                        (result.get("RMSE").mean(), result.get("RMSE").std()))
+            rmse_list.append(result.get("RMSE").mean())
+            # print("\tNRMSE Scores: %0.4f (+/- %0.2f)" %
+            #       (processed_data.get("NRMSE").mean(), processed_data.get("NRMSE").std()))
 
-    # r2_list = []
-    # rmse_list = []
-    # val_r2_list = []
-    # val_rmse_list = []
-    # # model_params = cfg.model_params.get(model_type).get(param_name)
-    # for i in range(10):
-    #     result, model = train_model(X, y, model_type=model_type, params=model_params)
-    #     logger.info(f"Epoch {i + 1}:")
-    #     logger.info("\tR2 Scores: %0.4f (+/- %0.2f)" %
-    #                 (result.get("R2").mean(), result.get("R2").std()))
-    #     r2_list.append(result.get("R2").mean())
-    #     logger.info("\tRMSE Scores: %0.4f (+/- %0.2f)" %
-    #                 (result.get("RMSE").mean(), result.get("RMSE").std()))
-    #     rmse_list.append(result.get("RMSE").mean())
-    #     # print("\tNRMSE Scores: %0.4f (+/- %0.2f)" %
-    #     #       (processed_data.get("NRMSE").mean(), processed_data.get("NRMSE").std()))
-    #
-    #     logger.info("Validation: ")
-    #     logger.info("\tR2 Scores: %0.4f" % result.get("Val_R2"))
-    #     val_r2_list.append(result.get("Val_R2"))
-    #     logger.info("\tRMSE Scores: %0.4f" % result.get("Val_RMSE"))
-    #     val_rmse_list.append(result.get("Val_RMSE"))
-    #     # print("\tNRMSE Scores: %0.4f" % processed_data.get("Val_NRMSE"))
-    #
-    # logger.info("\tSummery:")
-    # logger.info("\t\tTotal R2 Scores: %0.3f" % np.array(r2_list).mean())
-    # logger.info("\t\tTotal RMSE Scores: %0.3f" % np.array(rmse_list).mean())
-    # logger.info("\t\tTotal Validation R2 Scores: %0.3f" % np.array(val_r2_list).mean())
-    # logger.info("\t\tTotal Validation RMSE Scores: %0.3f" % np.array(val_rmse_list).mean())
+            logger.info("Validation: ")
+            logger.info("\tR2 Scores: %0.4f" % result.get("Val_R2"))
+            val_r2_list.append(result.get("Val_R2"))
+            logger.info("\tRMSE Scores: %0.4f" % result.get("Val_RMSE"))
+            val_rmse_list.append(result.get("Val_RMSE"))
+            # print("\tNRMSE Scores: %0.4f" % processed_data.get("Val_NRMSE"))
+
+        logger.info("\tSummery:")
+        logger.info("\t\tTotal R2 Scores: %0.3f" % np.array(r2_list).mean())
+        logger.info("\t\tTotal RMSE Scores: %0.3f" % np.array(rmse_list).mean())
+        logger.info("\t\tTotal Validation R2 Scores: %0.3f" % np.array(val_r2_list).mean())
+        logger.info("\t\tTotal Validation RMSE Scores: %0.3f" % np.array(val_rmse_list).mean())
+        return None
