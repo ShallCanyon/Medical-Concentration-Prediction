@@ -6,12 +6,13 @@ import numpy as np
 import torch
 from sklearn.preprocessing import StandardScaler
 
-import data_preprocess
+import DataPreprocess
 import global_config as cfg
 from deepchem import feat, data, metrics, hyper
-from deepchem.models import AttentiveFPModel, optimizers, TorchModel, GCNModel
+from deepchem.models import AttentiveFPModel, optimizers, GCNModel, GATModel
+from deepchem.models.torch_models import MPNNModel
 from sklearn.model_selection import train_test_split
-from data_preprocess import get_X_Y_by_ratio, get_SMILE_Y, split_null_from_csv
+from DataPreprocess import get_X_Y_by_ratio, get_SMILE_Y, split_null_from_data
 
 
 logger = cfg.logger
@@ -117,9 +118,9 @@ def train_GCNModel(train_dataset, valid_dataset, nb_epoch=300, lr=0.001, model_d
     # best_model, best_hyperparams, all_results = param_tuning(train_dataset, valid_dataset)
     # print("Best_hyperparams: ", best_hyperparams)
 
-    # learning_rate = optimizers.ExponentialDecay(lr, 0.9, 200)
-    learning_rate = optimizers.ExponentialDecay(0.002, 0.9, 200)
-    optimizer = optimizers.Adam(learning_rate=learning_rate)
+    lr = optimizers.ExponentialDecay(lr, 0.9, 200)
+    # lr = optimizers.ExponentialDecay(0.002, 0.9, 200)
+    optimizer = optimizers.AdaGrad(learning_rate=lr)
     # best_model = GCNModel(mode='regression',
     #                       n_tasks=1,
     #                       graph_conv_layers=[128, 128],
@@ -157,16 +158,19 @@ def train_GCNModel(train_dataset, valid_dataset, nb_epoch=300, lr=0.001, model_d
                                   graph_feat_size=700, num_timesteps=3, number_atom_features=30,
                                   number_bond_features=11, self_loop=True,
                                   batch_size=16, device='cuda',
-                                  learning_rate=learning_rate,
+                                  learning_rate=lr,
                                   # optimizer=optimizer,
                                   # loss=torch.nn.SmoothL1Loss(),
                                   model_dir=model_dir)
+    # best_model = MPNNModel(n_tasks=1, mode='regression', device='cuda')
     callback = dc.models.ValidationCallback(valid_dataset, 100, [r2_metric])
     if isinstance(train_dataset, list):
         for train in train_dataset:
             loss = best_model.fit(train, nb_epoch=nb_epoch, callbacks=callback)
+            # loss = best_model.fit(train, nb_epoch=nb_epoch)
     else:
         loss = best_model.fit(train_dataset, nb_epoch=nb_epoch, callbacks=callback)
+        # loss = best_model.fit(train_dataset, nb_epoch=nb_epoch)
     metric_list = [r2_metric, mse_metric]
     train_scores = best_model.evaluate(train_dataset, metric_list)
     valid_scores = best_model.evaluate(valid_dataset, metric_list)
@@ -254,7 +258,7 @@ if __name__ == '__main__':
     certain_time = 60
     organ_csv = f"./{cfg.parent_folder}/{cfg.filetime}/{organ_name}-{certain_time}min.csv"
     desc_csv = f"./{cfg.parent_folder}/{cfg.filetime}/{organ_name}-{certain_time}min-desc.csv"
-    _, y, smiles = data_preprocess.read_single_column_data(desc_csv)
+    _, y, smiles = DataPreprocess.get_single_column_data(desc_csv)
     X = featurize(smiles, is_torch=True)
 
     tuning = False

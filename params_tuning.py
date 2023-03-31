@@ -11,7 +11,7 @@ from sklearn.neural_network import MLPRegressor as MLP
 # from lightgbm import LGBMRegressor
 import lightgbm as lgb
 from sklearn.preprocessing import MinMaxScaler
-from data_preprocess import get_X_Y_by_ratio
+from DataPreprocess import get_X_Y_by_ratio
 
 
 class ParamsTuning:
@@ -106,8 +106,8 @@ class ParamsTuning:
         """
         if self.model_type == cfg.model_enum[0]:
             param_grid = {
-                "n_estimators": trial.suggest_int("n_estimators", 50, 2000, step=50),
-                "learning_rate": trial.suggest_float('learning_rate', 0.005, 0.03, step=0.001),
+                "n_estimators": trial.suggest_int("n_estimators", 100, 3000, step=100),
+                "learning_rate": trial.suggest_categorical('learning_rate', [0.001, 0.002, 0.005, 0.01, 0.02, 0.03]),
                 "max_depth": trial.suggest_int("max_depth", 0, 30),
                 'lambda': trial.suggest_loguniform('lambda', 1e-3, 10.0),
                 'alpha': trial.suggest_loguniform('alpha', 1e-3, 10.0),
@@ -126,8 +126,8 @@ class ParamsTuning:
                 # "learning_rate": trial.suggest_categorical('learning_rate',
                 #                                            [0.005, 0.008, 0.01, 0.012, 0.014, 0.016, 0.018, 0.02, 0.023,
                 #                                             0.025, 0.028, 0.03]),
-                "learning_rate": trial.suggest_float('learning_rate', 0.005, 0.03, step=0.001),
-                "n_estimators": trial.suggest_int("n_estimators", 50, 3000, step=50),
+                "learning_rate": trial.suggest_categorical('learning_rate', [0.001, 0.002, 0.005, 0.01, 0.02, 0.03]),
+                "n_estimators": trial.suggest_int("n_estimators", 100, 3000, step=100),
                 "objective": trial.suggest_categorical('objective', ['regression']),
                 "min_child_samples": trial.suggest_int("min_child_samples", 5, 30),
                 # 'colsample_bytree': trial.suggest_float("colsample_bytree", 0, 1, step=0.1),

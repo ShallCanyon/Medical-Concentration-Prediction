@@ -92,23 +92,21 @@ def select_multiple_organs_data(root_filepath: str, target_csvfilepath: str, org
     df.to_csv(target_csvfilepath, encoding='utf-8')
 
 
-def select_certain_time_organ_data(root_filepath: str, target_csvfilepath: str, organ_name: str, certain_time: int):
+def select_certain_time_organ_data(root_filepath: str, organ_name: str, certain_time: int):
     """
     筛选出指定器官在指定时间的浓度数据
 
     :param root_filepath: 源文件路径
-    :param target_csvfilepath: 目标csv文件路径
     :param organ_name: 选定的器官名
     :param certain_time: 选定的时间点
-    :return:
+    :return: 筛选得到的浓度数据dataframe
     """
     if root_filepath.endswith('xlsx') or root_filepath.endswith('xls'):
         raw_df = pd.read_excel(root_filepath, index_col=[0, 1], engine='openpyxl')
     elif root_filepath.endswith('csv'):
         raw_df = pd.read_csv(root_filepath, index_col=[0, 1])
     organ_df = raw_df.loc[:, raw_df.columns.str.startswith(f'{organ_name.lower()} mean{certain_time}min')]
-    a = 1
-    organ_df.to_csv(target_csvfilepath, encoding='utf-8')
+    return organ_df
 
 
 def select_max_organ_data(root_filepath: str, target_csvfilepath: str, organ_name: str):
@@ -171,12 +169,17 @@ def calculate_desc(datasrc, Mordred=True, MACCS=False, ECFP=False):
     """
     if isinstance(datasrc, str):
         df = pd.read_csv(datasrc)
-    elif isinstance(datasrc, pd.DataFrame or pd.Series):
+    elif isinstance(datasrc, pd.DataFrame) or isinstance(datasrc, pd.Series):
         df = datasrc
     else:
         raise ValueError("错误的datasrc类型")
+
+    if isinstance(datasrc, str) or isinstance(datasrc, pd.DataFrame):
+        SMILES = df['SMILES']
+    else:
+        SMILES = df
+
     X = pd.DataFrame()
-    SMILES = df['SMILES']
     # Mordred
     if Mordred:
         featurizer = feat.MordredDescriptors(ignore_3D=True)
@@ -257,14 +260,14 @@ def get_SMILE_Y(df, smile_column='SMILES', y_column='Max Concentration'):
     return SMILES, y
 
 
-def read_single_column_data(csv_file, smile_col=1, label_col=2, desc_start_col=3):
+def get_single_column_data(csv_file, smile_col=1, label_col=2, desc_start_col=3):
     """
-    读取只有一列回归数据的csv文件，默认第一二列为药物index和SMILES，第三列为回归数据，其后为数据特征
+    读取只有一列回归数据的csv文件，默认第一二列为药物index和SMILES，第三列为数据标签，其后为数据特征
     :param csv_file: 只有一列回归数据的csv文件
     :param smile_col: SMILES所在列号
-    :param label_col: 回归数据所在列号
+    :param label_col: 数据标签所在列号
     :param desc_start_col: 数据特征起始列号
-    :return: 完成清洗并归一化的数据特征X, 回归数据y
+    :return: 完成清洗的数据特征X, 回归数据y，SMILES
     """
     df = pd.read_csv(csv_file)
     df = clean_desc_dataframe(df)
@@ -274,14 +277,13 @@ def read_single_column_data(csv_file, smile_col=1, label_col=2, desc_start_col=3
     return X, y, smiles
 
 
-def split_null_from_csv(root_csvfile):
+def split_null_from_data(df):
     """
     将数据中的空数据与其他数据分开成两份dataframe
 
-    :param root_csvfile: 包含空数据的源csv文件
+    :param df: 包含空数据的源dataframe
     :return: 含数据的dataframe以及含空数据的dataframe
     """
-    df = pd.read_csv(root_csvfile)
     data_df = df.dropna(axis=0)
     empty_df = df.drop(index=data_df.index)
     return data_df.reset_index(drop=True), empty_df.reset_index(drop=True)
