@@ -19,7 +19,7 @@ padel_csvfilepath = f"./{parent_folder}/{filetime}/PadelDescriptors.csv"
 
 # 模型训练目录配置
 cur_time = time.localtime()
-model_parent_folder = f"D:\\ML\\Medical Data Process\\training_results{time.strftime('%Y%m%d', cur_time)}"
+model_parent_folder = f"D:\\ML\\Medical Data Process\\training_results\\{time.strftime('%Y%m%d', cur_time)}"
 model_save_folder = f"{model_parent_folder}\\{time.strftime('%H%M%S', cur_time)}"
 if not os.path.exists(model_parent_folder):
     os.mkdir(model_parent_folder)
