@@ -289,15 +289,17 @@ def split_null_from_data(df):
     return data_df.reset_index(drop=True), empty_df.reset_index(drop=True)
 
 
-def clean_desc_dataframe(df: pd.DataFrame, axis=1) -> pd.DataFrame:
+def clean_desc_dataframe(df: pd.DataFrame, axis=1, drop_duplicates=True) -> pd.DataFrame:
     """
     清除描述符dataframe中的无效数据，避免发生报错
 
     :param df: 包含无效数据的Dataframe
     :param axis: axis为1时清除掉包含无效数据的列（默认），0时清除行
+    :param drop_duplicates: 是否丢弃重复的行
     :return: 完成清除的Dataframe
     """
     df = df.replace(["#NAME?", np.inf, -np.inf], np.nan)
     df = df.dropna(axis=axis)
-    df = df.drop_duplicates()
+    if drop_duplicates:
+        df = df.drop_duplicates()
     return df
