@@ -13,9 +13,10 @@ import torch
 
 
 class MedicalDatasets:
-    def __init__(self, csv_filepath):
+    def __init__(self, csv_filepath, folder_path):
         self.__device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.csv_filepath = csv_filepath
+        self.folder_path = folder_path
         self.desc_num = 0
 
     def get_single_organ_tensor(self, test_size=0.1):
@@ -44,9 +45,9 @@ class MedicalDatasets:
         :param overwrite: 是否覆盖已有的npy文件
         :return: 保存所有器官及其df的字典
         """
-        npy_file = '.\\Datasets\\multi_organ.npy'
-        smile_file = '.\\Datasets\\SMILE.csv'
-        mordred_tuned_index = '.\\Datasets\\mordred_tuned_index.npy'
+        npy_file = f'{self.folder_path}\\multi_organ.npy'
+        smile_file = f'{self.folder_path}\\SMILE.csv'
+        mordred_tuned_index = f'{self.folder_path}\\mordred_tuned_index.npy'
 
         if overwrite or not os.path.exists(npy_file):
             df = pd.read_csv(self.csv_filepath)
@@ -108,4 +109,4 @@ class MedicalDatasets:
             x = torch.tensor(x.values).to(self.__device)
             y = torch.tensor(y.values).resize_(count, 1).to(self.__device)
             dataset = TensorDataset(x, y)
-            torch.save(dataset, f'D:\\ML\\Medical Data Process\\DL\\Datasets\\{name}_{count}_dataset.pt')
+            torch.save(dataset, f'{self.folder_path}\\{name}_{count}_dataset.pt')

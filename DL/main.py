@@ -26,104 +26,25 @@ def read_tensor_datasets(device):
             map[name] = torch.load(base_dir + path, map_location=device)
     return map
 
-"""
-def accuracy(predictions, targets):
-    predictions = predictions.argmax(dim=1).view(targets.shape)
-    return (predictions == targets).sum().float() / targets.size(0)
 
-
-def fast_adapt(batch, learner, criterion, adaptation_steps, shots, ways, device):
-    data, labels = batch
-    data, labels = data.to(device), labels.to(device)
-
-    # Separate data into adaptation/evalutation sets
-    adaptation_indices = np.zeros(data.size(0), dtype=bool)
-    adaptation_indices[np.arange(shots * ways) * 2] = True
-    evaluation_indices = torch.from_numpy(~adaptation_indices)
-    adaptation_indices = torch.from_numpy(adaptation_indices)
-    adaptation_data, adaptation_labels = data[adaptation_indices], labels[adaptation_indices]
-    evaluation_data, evaluation_labels = data[evaluation_indices], labels[evaluation_indices]
-
-    # Adapt the model
-    for step in range(adaptation_steps):
-        train_loss = criterion(learner(adaptation_data), adaptation_labels)
-        learner.adapt(train_loss)
-
-    # Evaluate the adapted model
-    predictions = learner(evaluation_data)
-    valid_loss = criterion(predictions, evaluation_labels)
-    valid_accuracy = accuracy(predictions, evaluation_labels)
-    return valid_loss, valid_accuracy
-"""
-
-
-def main(model_lr=1e-3,
-         maml_lr=0.5,
-         support_batch_size=32,
-         query_batch_size=16,
-         adaptation_steps=1,
-         cuda=False,
-         seed=42):
-
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    device = torch.device('cpu')
-    if cuda:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    logger.info(f"Available device: {device}")
-
+def train(dataloader, model, opt, criterion, adaptation_steps):
     """
-        从csv文件中读取并处理初始数据集
+    训练maml模型
+    :param dataloader: 数据装载器
+    :param model: maml模型
+    :param opt: 优化器
+    :param criterion: loss指标
+    :param adaptation_steps: maml自适应步数
+    :return:
     """
-    csv_filepath = "D:\\ML\\Medical Data Process\\processed_data\\20230321\\OrganDataAt60min.csv"
-    md = MedicalDatasets(csv_filepath)
-    map = md.transform_organs_data(overwrite=False)
-    md.save_dataframes2Tensor(map)
-
-    """
-        将数据集处理成查询集与支持集
-    """
-    target_organ = 'blood'
-    torchDatasets = read_tensor_datasets(device)
-    queryset = torchDatasets.pop(target_organ)
-    supportset = torchDatasets
-    logger.info(f"Select {target_organ} as query set")
-    # print(torchDatasets)
-
-    meta_queryset = MetaDataset(queryset)
-    meta_supportset = MetaDataset(ConcatDataset(supportset.values()))
-    query_dataloader = DataLoader(meta_queryset, batch_size=query_batch_size, shuffle=True)
-    support_dataloader = DataLoader(meta_supportset, batch_size=support_batch_size, shuffle=True)
-
-    # transforms = [
-    #     l2l.data.transforms.NWays(meta_dataset, n=5),
-    #     l2l.data.transforms.KShots(meta_dataset, k=10),
-    #     l2l.data.transforms.LoadData(meta_dataset),
-    # ]
-    # # taskset = TaskDataset(meta_dataset, transforms, num_tasks=len(torchDatasets))
-    # taskset = TaskDataset(meta_dataset, transforms, num_tasks=len(meta_dataset))
-
-    """
-        初始化模型
-    """
-    # model = RegressionModel(input_size=map.get('brain').shape[1], n_hidden=32, output_size=1).to(device)
-    model = RegressionModel(input_size=25, n_hidden=128, output_size=1).to(device)
-    maml = MAML(model, lr=maml_lr, first_order=False).to(device)
-    criterion = nn.MSELoss()
-    opt = torch.optim.Adam(maml.parameters(), lr=model_lr)
-
-    """
-        训练集（支持集）
-    """
-    for iter, batch in enumerate(support_dataloader):  # num_tasks/batch_size
+    for iter, batch in enumerate(dataloader):  # num_tasks/batch_size
         opt.zero_grad()
         meta_valid_loss = 0.0
 
         # for each task in the batch
         effective_batch_size = batch[0].shape[0]
         for i in range(effective_batch_size):
-            learner = maml.clone()
+            learner = model.clone()
 
             # divide the data into support and query sets
             train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
@@ -149,17 +70,25 @@ def main(model_lr=1e-3,
         meta_valid_loss.backward()
         opt.step()
 
+
+def eval(dataloader, model, opt, criterion, adaptation_steps):
     """
-        验证集（查询集）
+    验证maml模型
+    :param dataloader: 数据装载器
+    :param model: maml模型
+    :param opt: 优化器
+    :param criterion: loss指标
+    :param adaptation_steps: maml自适应步数
+    :return:
     """
-    for iter, batch in enumerate(query_dataloader):
+    for iter, batch in enumerate(dataloader):
         opt.zero_grad()
         effective_batch_size = batch[0].shape[0]
         meta_valid_loss = 0.0
         if iter % 10 == 0:
             logger.info(f'Iteration: {iter} started:')
         for i in range(effective_batch_size):
-            learner = maml.clone()
+            learner = model.clone()
 
             # divide the data into support and query sets
             train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
@@ -174,79 +103,131 @@ def main(model_lr=1e-3,
             query_preds = learner(x_query)
             query_loss = criterion(query_preds, y_query)
             if iter % 10 == 0:
-                logger.info(f"Iteration: {iter} -- Batch {i} preds:\t{round(query_preds.item(), 5)},"
-                            f"\tground true:\t{round(y_query.item(), 5)}")
+                logger.info(f"Iteration: {iter} -- Batch {i} preds:\t{round(query_preds.item(), 2)},"
+                            f"\tground true:\t{round(y_query.item(), 2)}")
             meta_valid_loss += query_loss
 
         meta_valid_loss = meta_valid_loss / effective_batch_size
 
         if iter % 10 == 0:
             logger.info(f'Iteration: {iter} Meta Valid Loss: {meta_valid_loss.item()}')
-    torch.save(maml, f"{cfg.model_save_folder}\\maml.mdl")
-    """for iteration in range(num_iterations):
-        opt.zero_grad()
-        meta_train_error = 0.0
-        meta_train_accuracy = 0.0
-        meta_valid_error = 0.0
-        meta_valid_accuracy = 0.0
-        for task in range(meta_batch_size):
-            # Compute meta-training loss
-            learner = maml.clone()
-            batch = tasksets.train.sample()
-            evaluation_error, evaluation_accuracy = fast_adapt(batch,
-                                                               learner,
-                                                               criterion,
-                                                               adaptation_steps,
-                                                               shots,
-                                                               ways,
-                                                               device)
-            evaluation_error.backward()
-            meta_train_error += evaluation_error.item()
-            meta_train_accuracy += evaluation_accuracy.item()
-
-            # Compute meta-validation loss
-            learner = maml.clone()
-            batch = tasksets.validation.sample()
-            evaluation_error, evaluation_accuracy = fast_adapt(batch,
-                                                               learner,
-                                                               criterion,
-                                                               adaptation_steps,
-                                                               shots,
-                                                               ways,
-                                                               device)
-            meta_valid_error += evaluation_error.item()
-            meta_valid_accuracy += evaluation_accuracy.item()
-
-        # Print some metrics
-        print('\n')
-        print('Iteration', iteration)
-        print('Meta Train Error', meta_train_error / meta_batch_size)
-        print('Meta Train Accuracy', meta_train_accuracy / meta_batch_size)
-        print('Meta Valid Error', meta_valid_error / meta_batch_size)
-        print('Meta Valid Accuracy', meta_valid_accuracy / meta_batch_size)
-
-        # Average the accumulated gradients and optimize
-        for p in maml.parameters():
-            p.grad.data.mul_(1.0 / meta_batch_size)
+        meta_valid_loss.backward()
         opt.step()
 
-    meta_test_error = 0.0
-    meta_test_accuracy = 0.0
-    for task in range(meta_batch_size):
-        # Compute meta-testing loss
-        learner = maml.clone()
-        batch = tasksets.test.sample()
-        evaluation_error, evaluation_accuracy = fast_adapt(batch,
-                                                           learner,
-                                                           criterion,
-                                                           adaptation_steps,
-                                                           shots,
-                                                           ways,
-                                                           device)
-        meta_test_error += evaluation_error.item()
-        meta_test_accuracy += evaluation_accuracy.item()
-    print('Meta Test Error', meta_test_error / meta_batch_size)
-    print('Meta Test Accuracy', meta_test_accuracy / meta_batch_size)"""
+
+def external_eval(dataloader, model, opt, criterion, adaptation_steps):
+    for iter, batch in enumerate(dataloader):
+        opt.zero_grad()
+        effective_batch_size = batch[0].shape[0]
+        meta_valid_loss = 0.0
+        if iter % 10 == 0:
+            logger.info(f'Iteration: {iter} started:')
+        for i in range(effective_batch_size):
+            learner = model.clone()
+
+            # divide the data into support and query sets
+            train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
+            x_support, y_support = train_inputs[::2], train_targets
+            x_query, y_query = train_inputs[1::2], train_targets
+
+            # for _ in range(adaptation_steps):  # adaptation_steps
+            #     support_preds = learner(x_support)
+            #     support_loss = criterion(support_preds, y_support)
+            #     learner.adapt(support_loss)
+
+            support_preds = learner(x_support)
+            support_loss = criterion(support_preds, y_support)
+            if iter % 10 == 0:
+                logger.info(f"Iteration: {iter} -- Batch {i} support preds:\t{round(support_loss.item(), 2)},"
+                            f"\tground true:\t{round(y_support.item(), 2)}")
+            query_preds = learner(x_query)
+            query_loss = criterion(query_preds, y_query)
+            if iter % 10 == 0:
+                logger.info(f"Iteration: {iter} -- Batch {i} query preds:\t{round(query_preds.item(), 2)},"
+                            f"\tground true:\t{round(y_query.item(), 2)}")
+            meta_valid_loss += support_loss
+            meta_valid_loss += query_loss
+
+        meta_valid_loss = meta_valid_loss / (effective_batch_size * 2)
+
+        if iter % 10 == 0:
+            logger.info(f'Iteration: {iter} Meta Valid Loss: {meta_valid_loss.item()}')
+        meta_valid_loss.backward()
+        opt.step()
+
+
+def main(model_lr=1e-3,
+         maml_lr=0.5,
+         support_batch_size=32,
+         query_batch_size=16,
+         adaptation_steps=1,
+         cuda=False,
+         seed=42):
+
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    device = torch.device('cpu')
+    if cuda:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    logger.info(f"Available device: {device}")
+
+    """
+        从csv文件中读取并处理初始数据集
+    """
+    folder_path = "D:\\ML\\Medical Data Process\\DL\\Datasets"
+    csv_filepath = "D:\\ML\\Medical Data Process\\processed_data\\20230321\\OrganDataAt60min.csv"
+    # TODO: 优化数据处理类
+    md = MedicalDatasets(csv_filepath, folder_path)
+    map = md.transform_organs_data(overwrite=False)
+    md.save_dataframes2Tensor(map)
+
+    """
+        将数据集处理成查询集与支持集
+    """
+    target_organ = 'blood'
+    torchDatasets = read_tensor_datasets(device)
+    queryset = torchDatasets.pop(target_organ)
+    supportset = torchDatasets
+    logger.info(f"Select {target_organ} as query set")
+    # 读取外部验证集
+    externalset = torch.load("./ExtenalDatasets/blood_13_dataset.pt", map_location=device)
+
+    meta_queryset = MetaDataset(queryset)
+    meta_supportset = MetaDataset(ConcatDataset(supportset.values()))
+    meta_externalset = MetaDataset(externalset)
+
+    query_dataloader = DataLoader(meta_queryset, batch_size=query_batch_size, shuffle=True)
+    support_dataloader = DataLoader(meta_supportset, batch_size=support_batch_size, shuffle=True)
+    external_dataloader = DataLoader(meta_externalset, batch_size=query_batch_size, shuffle=True)
+
+    """
+        初始化模型
+    """
+    # model = RegressionModel(input_size=map.get('brain').shape[1], n_hidden=32, output_size=1).to(device)
+    model = RegressionModel(input_size=25, n_hidden=64, output_size=1).to(device)
+    maml = MAML(model, lr=maml_lr, first_order=False).to(device)
+    criterion = nn.MSELoss()
+    opt = torch.optim.Adam(maml.parameters(), lr=model_lr)
+
+    """
+        训练集（支持集）
+    """
+    train(support_dataloader, maml, opt, criterion, adaptation_steps)
+
+    """
+        验证集（查询集）
+    """
+    logger.info("\nQuery set validation:")
+    eval(query_dataloader, maml, opt, criterion, adaptation_steps)
+
+    torch.save(maml, f"{cfg.model_save_folder}\\maml.mdl")
+
+    """
+        外部验证集
+    """
+    logger.info("\nExternal validation:")
+    external_eval(external_dataloader, maml, opt, criterion, adaptation_steps)
 
 
 if __name__ == '__main__':
