@@ -28,7 +28,10 @@ class FeatureExtraction:
         :param UFE_percentile: UFE筛选的百分比
         """
         self.X = X
-        self.y = y
+        if type(y) is pd.DataFrame:
+            self.y = y.squeeze().ravel()
+        else:
+            self.y = y.ravel()
         if mode not in ['regression', 'classification']:
             raise ValueError("Mode should be 'regression' or 'classification'")
         self.mode = mode
@@ -70,7 +73,7 @@ class FeatureExtraction:
         if self.mode == 'classification':
             clf = ExtraTreesClassifier()
         clf = clf.fit(X, y)
-        model = SelectFromModel(clf, prefit=True)
+        model = SelectFromModel(clf, prefit=True, threshold=-np.inf, max_features=self.RFE_features_to_select * 2)
         X_new = model.transform(X)
         return X_new
 

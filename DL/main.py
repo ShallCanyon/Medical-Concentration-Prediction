@@ -1,5 +1,6 @@
 import os
 import random
+import time
 
 import DataPreprocess
 import global_config as cfg
@@ -38,20 +39,21 @@ def train(dataloader, model, opt, criterion, adaptation_steps):
     :return:
     """
     for iter, batch in enumerate(dataloader):  # num_tasks/batch_size
-        opt.zero_grad()
         meta_valid_loss = 0.0
 
         # for each task in the batch
         effective_batch_size = batch[0].shape[0]
+        # effective_batch_size = int(batch[0].shape[0] / 2)
         for i in range(effective_batch_size):
             learner = model.clone()
 
             # divide the data into support and query sets
             train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
-            # x_support, y_support = train_inputs[::2], train_targets[::2]
-            # x_query, y_query = train_inputs[1::2], train_targets[1::2]
             x_support, y_support = train_inputs[::2], train_targets
             x_query, y_query = train_inputs[1::2], train_targets
+            # idx = 2 * i
+            # x_support, y_support = batch[0][idx].float(), batch[1][idx].float()
+            # x_query, y_query = batch[0][idx + 1].float(), batch[1][idx + 1].float()
 
             for _ in range(adaptation_steps):  # adaptation_steps
                 support_preds = learner(x_support)
@@ -66,7 +68,7 @@ def train(dataloader, model, opt, criterion, adaptation_steps):
 
         if iter % 10 == 0:
             logger.info(f'Iteration: {iter} Meta Train Loss: {meta_valid_loss.item()}\n')
-
+        opt.zero_grad()
         meta_valid_loss.backward()
         opt.step()
 
@@ -82,11 +84,12 @@ def eval(dataloader, model, opt, criterion, adaptation_steps):
     :return:
     """
     for iter, batch in enumerate(dataloader):
-        opt.zero_grad()
-        effective_batch_size = batch[0].shape[0]
         meta_valid_loss = 0.0
+
         if iter % 10 == 0:
             logger.info(f'Iteration: {iter} started:')
+        effective_batch_size = batch[0].shape[0]
+        # effective_batch_size = int(batch[0].shape[0] / 2)
         for i in range(effective_batch_size):
             learner = model.clone()
 
@@ -94,6 +97,10 @@ def eval(dataloader, model, opt, criterion, adaptation_steps):
             train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
             x_support, y_support = train_inputs[::2], train_targets
             x_query, y_query = train_inputs[1::2], train_targets
+
+            # idx = 2 * i
+            # x_support, y_support = batch[0][idx].float(), batch[1][idx].float()
+            # x_query, y_query = batch[0][idx + 1].float(), batch[1][idx + 1].float()
 
             for _ in range(adaptation_steps):  # adaptation_steps
                 support_preds = learner(x_support)
@@ -111,6 +118,7 @@ def eval(dataloader, model, opt, criterion, adaptation_steps):
 
         if iter % 10 == 0:
             logger.info(f'Iteration: {iter} Meta Valid Loss: {meta_valid_loss.item()}')
+        opt.zero_grad()
         meta_valid_loss.backward()
         opt.step()
 
@@ -118,37 +126,44 @@ def eval(dataloader, model, opt, criterion, adaptation_steps):
 def external_eval(dataloader, model, opt, criterion, adaptation_steps):
     for iter, batch in enumerate(dataloader):
         opt.zero_grad()
-        effective_batch_size = batch[0].shape[0]
         meta_valid_loss = 0.0
+
         if iter % 10 == 0:
             logger.info(f'Iteration: {iter} started:')
+        effective_batch_size = batch[0].shape[0]
         for i in range(effective_batch_size):
             learner = model.clone()
 
             # divide the data into support and query sets
             train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
-            x_support, y_support = train_inputs[::2], train_targets
-            x_query, y_query = train_inputs[1::2], train_targets
+            # x_support, y_support = train_inputs[::2], train_targets
+            # x_query, y_query = train_inputs[1::2], train_targets
 
             # for _ in range(adaptation_steps):  # adaptation_steps
             #     support_preds = learner(x_support)
             #     support_loss = criterion(support_preds, y_support)
             #     learner.adapt(support_loss)
 
-            support_preds = learner(x_support)
-            support_loss = criterion(support_preds, y_support)
-            if iter % 10 == 0:
-                logger.info(f"Iteration: {iter} -- Batch {i} support preds:\t{round(support_loss.item(), 2)},"
-                            f"\tground true:\t{round(y_support.item(), 2)}")
-            query_preds = learner(x_query)
-            query_loss = criterion(query_preds, y_query)
-            if iter % 10 == 0:
-                logger.info(f"Iteration: {iter} -- Batch {i} query preds:\t{round(query_preds.item(), 2)},"
-                            f"\tground true:\t{round(y_query.item(), 2)}")
-            meta_valid_loss += support_loss
-            meta_valid_loss += query_loss
+            support_preds = learner(train_inputs)
+            support_loss = criterion(support_preds, train_targets)
+            logger.info(f"Iteration: {iter} -- Batch {i} support preds:\t{round(support_preds.item(), 2)}, "
+                        f"ground true:\t{round(train_targets.item(), 2)}")
 
-        meta_valid_loss = meta_valid_loss / (effective_batch_size * 2)
+            # support_preds = learner(x_support)
+            # support_loss = criterion(support_preds, y_support)
+            # if iter % 10 == 0:
+            #     logger.info(f"Iteration: {iter} -- Batch {i} support preds:\t{round(support_preds.item(), 2)},"
+            #                 f"\tground true:\t{round(y_support.item(), 2)}")
+            # query_preds = learner(x_query)
+            # query_loss = criterion(query_preds, y_query)
+            # if iter % 10 == 0:
+            #     logger.info(f"Iteration: {iter} -- Batch {i} query preds:\t{round(query_preds.item(), 2)},"
+            #                 f"\tground true:\t{round(y_query.item(), 2)}")
+            meta_valid_loss += support_loss
+            # meta_valid_loss += query_loss
+
+        meta_valid_loss = meta_valid_loss / effective_batch_size
+        # meta_valid_loss = meta_valid_loss / (effective_batch_size * 2)
 
         if iter % 10 == 0:
             logger.info(f'Iteration: {iter} Meta Valid Loss: {meta_valid_loss.item()}')
@@ -161,12 +176,16 @@ def main(model_lr=1e-3,
          support_batch_size=32,
          query_batch_size=16,
          adaptation_steps=1,
+         hidden_size=128,
          cuda=False,
          seed=42):
+    # 输出参数
+    logger.info(f"训练参数: {locals()}")
 
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+
     device = torch.device('cpu')
     if cuda:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -179,19 +198,24 @@ def main(model_lr=1e-3,
     csv_filepath = "D:\\ML\\Medical Data Process\\processed_data\\20230321\\OrganDataAt60min.csv"
     # TODO: 优化数据处理类
     md = MedicalDatasets(csv_filepath, folder_path)
-    map = md.transform_organs_data(overwrite=False)
+    map = md.transform_organs_data(overwrite=True)
     md.save_dataframes2Tensor(map)
 
     """
         将数据集处理成查询集与支持集
     """
-    target_organ = 'blood'
+    target_organ = 'brain'
     torchDatasets = read_tensor_datasets(device)
     queryset = torchDatasets.pop(target_organ)
     supportset = torchDatasets
     logger.info(f"Select {target_organ} as query set")
     # 读取外部验证集
-    externalset = torch.load("./ExtenalDatasets/blood_13_dataset.pt", map_location=device)
+    if target_organ == 'blood':
+        externalset = torch.load("./ExtenalDatasets/blood_13_dataset.pt", map_location=device)
+    elif target_organ == 'brain':
+        externalset = torch.load("./ExtenalDatasets/brain_10_dataset.pt", map_location=device)
+    else:
+        raise ValueError("外部数据集未找到")
 
     meta_queryset = MetaDataset(queryset)
     meta_supportset = MetaDataset(ConcatDataset(supportset.values()))
@@ -199,13 +223,13 @@ def main(model_lr=1e-3,
 
     query_dataloader = DataLoader(meta_queryset, batch_size=query_batch_size, shuffle=True)
     support_dataloader = DataLoader(meta_supportset, batch_size=support_batch_size, shuffle=True)
-    external_dataloader = DataLoader(meta_externalset, batch_size=query_batch_size, shuffle=True)
+    external_dataloader = DataLoader(meta_externalset, batch_size=len(externalset), shuffle=True)
 
     """
         初始化模型
     """
     # model = RegressionModel(input_size=map.get('brain').shape[1], n_hidden=32, output_size=1).to(device)
-    model = RegressionModel(input_size=25, n_hidden=64, output_size=1).to(device)
+    model = RegressionModel(input_size=50, n_hidden=hidden_size, output_size=1).to(device)
     maml = MAML(model, lr=maml_lr, first_order=False).to(device)
     criterion = nn.MSELoss()
     opt = torch.optim.Adam(maml.parameters(), lr=model_lr)
@@ -231,10 +255,19 @@ def main(model_lr=1e-3,
 
 
 if __name__ == '__main__':
+    # main(model_lr=0.001,
+    #      maml_lr=0.005,
+    #      support_batch_size=16,
+    #      query_batch_size=8,
+    #      adaptation_steps=10,
+    #      cuda=False,
+    #      seed=42)
     main(model_lr=0.001,
-         maml_lr=0.005,
+         maml_lr=0.01,
          support_batch_size=16,
          query_batch_size=8,
-         adaptation_steps=10,
-         cuda=False,
-         seed=42)
+         adaptation_steps=5,
+         hidden_size=256,
+         cuda=True,
+         seed=int(time.time())
+         )

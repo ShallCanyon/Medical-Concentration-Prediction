@@ -39,15 +39,17 @@ class MedicalDatasets:
 
         return train_dataset, test_dataset
 
-    def transform_organs_data(self, overwrite=False):
+    def transform_organs_data(self, double_index=True, overwrite=False):
         """
         读取保存全部器官浓度数据的csv文件，并逐个处理为单一器官的dataframe并以{器官名：器官df}的格式保存到npy文件中
+        :param double_index:
         :param overwrite: 是否覆盖已有的npy文件
         :return: 保存所有器官及其df的字典
         """
         npy_file = f'{self.folder_path}\\multi_organ.npy'
         smile_file = f'{self.folder_path}\\SMILE.csv'
-        mordred_tuned_index = f'{self.folder_path}\\mordred_tuned_index.npy'
+        mordred_50_tuned_index = f'{self.folder_path}\\mordred_50_tuned_index.npy'
+        mordred_100_tuned_index = f'{self.folder_path}\\mordred_100_tuned_index.npy'
 
         if overwrite or not os.path.exists(npy_file):
             df = pd.read_csv(self.csv_filepath)
@@ -68,22 +70,39 @@ class MedicalDatasets:
 
             # 保存所有器官的描述符以及浓度数据的字典
             datasets = {}
-            # 特征提取的列索引，从mordred_tuned_index文件中读取，若不存在则进行因此特征提取后写入文件中
-            desc_idx_list = []
-            if os.path.exists(mordred_tuned_index):
-                desc_idx_list = np.load(mordred_tuned_index).tolist()
+            # 特征提取的列索引，从文件中读取，若不存在则进行特征提取后写入文件中
+            desc_50_idx_list = []
+            desc_100_idx_list = []
+            if os.path.exists(mordred_50_tuned_index):
+                desc_50_idx_list = np.load(mordred_50_tuned_index).tolist()
+                print("Length of 50 desc list: ", len(desc_50_idx_list))
+            if os.path.exists(mordred_100_tuned_index):
+                desc_100_idx_list = np.load(mordred_100_tuned_index).tolist()
+                print("Length of 100 desc list: ", len(desc_100_idx_list))
 
             for index, col in organs_y.iteritems():
                 organ_name = index.split()[0]
                 concentration_data = pd.DataFrame({'Concentration': col})
+                # concentration_data = pd.Series({'Concentration': col})
+                # 保存50个筛选特征索引
+                if len(desc_50_idx_list) == 0:
+                    desc_50_idx_list = FeatureExtraction(Modred_Desc, concentration_data.fillna(value=0)).\
+                        feature_extraction(TBE=True, returnIndex=True)
+                    print("Length of 50 desc list: ", len(desc_50_idx_list))
+                    np.save(mordred_50_tuned_index, desc_50_idx_list)
+                # 保存100个筛选特征索引
+                if len(desc_100_idx_list) == 0:
+                    desc_100_idx_list = FeatureExtraction(Modred_Desc,
+                                                          concentration_data.fillna(value=0),
+                                                          RFE_features_to_select=100)\
+                        .feature_extraction(TBE=True, returnIndex=True)
+                    print("Length of 100 desc list: ", len(desc_100_idx_list))
+                    np.save(mordred_100_tuned_index, desc_100_idx_list)
 
-                if len(desc_idx_list) == 0:
-                    desc_idx_list = FeatureExtraction(Modred_Desc, concentration_data.fillna(value=0)).\
-                        feature_extraction(returnIndex=True)
-                    np.save(mordred_tuned_index, desc_idx_list)
-                # print(desc_idx_list)
-                Modred_Desc = Modred_Desc.loc[:, desc_idx_list]
-
+                if double_index:
+                    Modred_Desc = Modred_Desc.loc[:, desc_100_idx_list]
+                else:
+                    Modred_Desc = Modred_Desc.loc[:, desc_50_idx_list]
                 organ_df = pd.concat([smiles, concentration_data, Modred_Desc], axis=1)
                 # 根据浓度数据列的空数据抛弃行数据
                 organ_df = organ_df.dropna(subset=['Concentration'])
