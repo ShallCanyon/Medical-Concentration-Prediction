@@ -1,13 +1,10 @@
-import numpy as np
 import pandas as pd
 
-import DataPreprocess
 import global_config as cfg
 import os
-from model_training import train_model, model_training
-from DataPreprocess import *
+from model_training import model_training
 from params_tuning import ParamsTuning
-from FeatureExtraction import FeatureExtraction
+from DataPreprocess.FeatureExtraction import FeatureExtraction
 
 logger = cfg.logger
 

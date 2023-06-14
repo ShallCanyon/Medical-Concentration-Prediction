@@ -2,24 +2,21 @@ import os
 import random
 import time
 
-import DataPreprocess
 import global_config as cfg
 import torch
 import numpy as np
-import learn2learn as l2l
 from torch import nn
-from learn2learn.data import MetaDataset, TaskDataset
-from torch.utils.data import TensorDataset, ConcatDataset, DataLoader
+from learn2learn.data import MetaDataset
+from torch.utils.data import ConcatDataset, DataLoader
 from MetaRegressionModel import RegressionModel
 from learn2learn.algorithms import MAML
-from MedicalDatasets import MedicalDatasets
+from MetaDatasetsPreprocess import combine_desc_concentration_data_to_Dataset
 from DataLogger import DataLogger
 
 logger = DataLogger(cfg.logger_filepath, 'MAML').getlog()
 
 
-def read_tensor_datasets(device):
-    base_dir = "./Datasets/"
+def read_tensor_datasets(base_dir, device):
     map = {}
     for path in os.listdir(base_dir):
         if path.endswith(".pt"):
@@ -178,7 +175,8 @@ def main(model_lr=1e-3,
          adaptation_steps=1,
          hidden_size=128,
          cuda=False,
-         seed=42):
+         seed=42,
+         external_validation=False):
     # 输出参数
     logger.info(f"训练参数: {locals()}")
 
@@ -191,39 +189,41 @@ def main(model_lr=1e-3,
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logger.info(f"Available device: {device}")
 
-    """
-        从csv文件中读取并处理初始数据集
-    """
-    folder_path = "D:\\ML\\Medical Data Process\\DL\\Datasets"
-    csv_filepath = "D:\\ML\\Medical Data Process\\processed_data\\20230321\\OrganDataAt60min.csv"
-    # TODO: 优化数据处理类
-    md = MedicalDatasets(csv_filepath, folder_path)
-    map = md.transform_organs_data(overwrite=True)
-    md.save_dataframes2Tensor(map)
+    # 生成TensorDataset
+    combine_desc_concentration_data_to_Dataset(desc_file='merged_FP.csv', concentration_csv_file="OrganDataAt60min.csv")
 
     """
         将数据集处理成查询集与支持集
     """
     target_organ = 'blood'
-    torchDatasets = read_tensor_datasets(device)
+    # torchDatasets = read_tensor_datasets(base_dir="./Datasets/", device=device)
+    torchDatasets = read_tensor_datasets(base_dir="../Data/DL/Datasets/", device=device)
     queryset = torchDatasets.pop(target_organ)
     supportset = torchDatasets
-    logger.info(f"Select {target_organ} as query set")
-    # 读取外部验证集
-    if target_organ == 'blood':
-        externalset = torch.load("./ExtenalDatasets/blood_12_dataset.pt", map_location=device)
-    elif target_organ == 'brain':
-        externalset = torch.load("./ExtenalDatasets/brain_9_dataset.pt", map_location=device)
-    else:
-        raise ValueError("外部数据集未找到")
-
     meta_queryset = MetaDataset(queryset)
     meta_supportset = MetaDataset(ConcatDataset(supportset.values()))
-    meta_externalset = MetaDataset(externalset)
+
+    logger.info(f"Select {target_organ} as query set")
+
+    # 加入外部验证环节
+    if external_validation:
+        # 生成外部验证TensorDataset
+        combine_desc_concentration_data_to_Dataset(desc_file='merged_FP.csv',
+                                                   concentration_csv_file="OrganDataAt60min.csv",
+                                                   external=True)
+        # 读取外部验证集
+        if target_organ == 'blood':
+            externalset = torch.load("./ExtenalDatasets/blood_12_dataset.pt", map_location=device)
+        elif target_organ == 'brain':
+            externalset = torch.load("./ExtenalDatasets/brain_9_dataset.pt", map_location=device)
+        else:
+            raise ValueError("外部数据集未找到")
+        meta_externalset = MetaDataset(externalset)
 
     query_dataloader = DataLoader(meta_queryset, batch_size=query_batch_size, shuffle=True)
     support_dataloader = DataLoader(meta_supportset, batch_size=support_batch_size, shuffle=True)
-    external_dataloader = DataLoader(meta_externalset, batch_size=1, shuffle=True)
+    if external_validation:
+        external_dataloader = DataLoader(meta_externalset, batch_size=1, shuffle=True)
 
     """
         初始化模型
@@ -251,8 +251,10 @@ def main(model_lr=1e-3,
     """
         外部验证集
     """
-    logger.info("\nExternal validation:")
-    external_eval(external_dataloader, maml, opt, criterion, adaptation_steps)
+    # 支持集和查询集训练时，会将特征一分为二进行处理，因此它们的特征数量应该为100，而验证集不需要训练过程，因此其特征应为50
+    if external_validation:
+        logger.info("\nExternal validation:")
+        external_eval(external_dataloader, maml, opt, criterion, adaptation_steps)
 
 
 if __name__ == '__main__':
@@ -270,5 +272,6 @@ if __name__ == '__main__':
          adaptation_steps=10,
          hidden_size=256,
          cuda=True,
-         seed=int(time.time())
+         seed=int(time.time()),
+         external_validation=True
          )

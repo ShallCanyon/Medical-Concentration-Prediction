@@ -11,7 +11,7 @@ from sklearn.neural_network import MLPRegressor as MLP
 # from lightgbm import LGBMRegressor
 import lightgbm as lgb
 from sklearn.preprocessing import MinMaxScaler
-from DataPreprocess import get_X_Y_by_ratio
+from DataPreprocess.DataPreprocess import get_X_Y_by_ratio
 
 
 class ParamsTuning:
