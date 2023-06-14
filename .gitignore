@@ -1,4 +1,4 @@
-/data
+/rawdata
 /img
 /problem_data
 /test
@@ -13,3 +13,5 @@ __pycache__/global_config.cpython-37.pyc
 /processed_data
 /training_results
 /scripts/data/
+/DataPreprocess/PaDEL-Descriptor
+/DataPreprocess/FP_result
