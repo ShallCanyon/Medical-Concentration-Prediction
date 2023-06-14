@@ -125,17 +125,14 @@ def eval(dataloader, model, opt, criterion, adaptation_steps):
 
 def external_eval(dataloader, model, opt, criterion, adaptation_steps):
     for iter, batch in enumerate(dataloader):
-        opt.zero_grad()
         meta_valid_loss = 0.0
-
-        if iter % 10 == 0:
-            logger.info(f'Iteration: {iter} started:')
         effective_batch_size = batch[0].shape[0]
+
         for i in range(effective_batch_size):
             learner = model.clone()
 
             # divide the data into support and query sets
-            train_inputs, train_targets = batch[0][i].float(), batch[1][i].float()
+            inputs, targets = batch[0][i].float(), batch[1][i].float()
             # x_support, y_support = train_inputs[::2], train_targets
             # x_query, y_query = train_inputs[1::2], train_targets
 
@@ -143,12 +140,12 @@ def external_eval(dataloader, model, opt, criterion, adaptation_steps):
             #     support_preds = learner(x_support)
             #     support_loss = criterion(support_preds, y_support)
             #     learner.adapt(support_loss)
-
-            support_preds = learner(train_inputs)
-            support_loss = criterion(support_preds, train_targets)
-            logger.info(f"Iteration: {iter} -- Batch {i} support preds:\t{round(support_preds.item(), 2)}, "
-                        f"ground true:\t{round(train_targets.item(), 2)}")
-
+            with torch.no_grad():
+                preds = learner(inputs)
+                loss = criterion(preds, targets)
+                logger.info(f"Iteration: {iter} -- Batch {i} preds: {round(preds.item(), 4)}, "
+                            f"ground true: {round(targets.item(), 2)}")
+                meta_valid_loss += loss
             # support_preds = learner(x_support)
             # support_loss = criterion(support_preds, y_support)
             # if iter % 10 == 0:
@@ -159,16 +156,19 @@ def external_eval(dataloader, model, opt, criterion, adaptation_steps):
             # if iter % 10 == 0:
             #     logger.info(f"Iteration: {iter} -- Batch {i} query preds:\t{round(query_preds.item(), 2)},"
             #                 f"\tground true:\t{round(y_query.item(), 2)}")
-            meta_valid_loss += support_loss
+            # learner.adapt(loss)
+
+
             # meta_valid_loss += query_loss
 
         meta_valid_loss = meta_valid_loss / effective_batch_size
+        logger.info(f'Iteration: {iter} Total Loss: {meta_valid_loss.item()}\n')
         # meta_valid_loss = meta_valid_loss / (effective_batch_size * 2)
-
-        if iter % 10 == 0:
-            logger.info(f'Iteration: {iter} Meta Valid Loss: {meta_valid_loss.item()}')
-        meta_valid_loss.backward()
-        opt.step()
+        # if iter != 0 and iter % 3 == 0:
+        #     logger.info(f'Iteration: {iter} Total Loss: {meta_valid_loss.item()}\n')
+        # opt.zero_grad()
+        # meta_valid_loss.backward()
+        # opt.step()
 
 
 def main(model_lr=1e-3,
@@ -204,16 +204,16 @@ def main(model_lr=1e-3,
     """
         将数据集处理成查询集与支持集
     """
-    target_organ = 'brain'
+    target_organ = 'blood'
     torchDatasets = read_tensor_datasets(device)
     queryset = torchDatasets.pop(target_organ)
     supportset = torchDatasets
     logger.info(f"Select {target_organ} as query set")
     # 读取外部验证集
     if target_organ == 'blood':
-        externalset = torch.load("./ExtenalDatasets/blood_13_dataset.pt", map_location=device)
+        externalset = torch.load("./ExtenalDatasets/blood_12_dataset.pt", map_location=device)
     elif target_organ == 'brain':
-        externalset = torch.load("./ExtenalDatasets/brain_10_dataset.pt", map_location=device)
+        externalset = torch.load("./ExtenalDatasets/brain_9_dataset.pt", map_location=device)
     else:
         raise ValueError("外部数据集未找到")
 
@@ -223,13 +223,14 @@ def main(model_lr=1e-3,
 
     query_dataloader = DataLoader(meta_queryset, batch_size=query_batch_size, shuffle=True)
     support_dataloader = DataLoader(meta_supportset, batch_size=support_batch_size, shuffle=True)
-    external_dataloader = DataLoader(meta_externalset, batch_size=len(externalset), shuffle=True)
+    external_dataloader = DataLoader(meta_externalset, batch_size=1, shuffle=True)
 
     """
         初始化模型
     """
     # model = RegressionModel(input_size=map.get('brain').shape[1], n_hidden=32, output_size=1).to(device)
     model = RegressionModel(input_size=50, n_hidden=hidden_size, output_size=1).to(device)
+
     maml = MAML(model, lr=maml_lr, first_order=False).to(device)
     criterion = nn.MSELoss()
     opt = torch.optim.Adam(maml.parameters(), lr=model_lr)
@@ -262,11 +263,11 @@ if __name__ == '__main__':
     #      adaptation_steps=10,
     #      cuda=False,
     #      seed=42)
-    main(model_lr=0.001,
+    main(model_lr=0.0005,
          maml_lr=0.01,
          support_batch_size=16,
          query_batch_size=8,
-         adaptation_steps=5,
+         adaptation_steps=10,
          hidden_size=256,
          cuda=True,
          seed=int(time.time())

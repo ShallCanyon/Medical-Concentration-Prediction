@@ -14,6 +14,11 @@ import torch
 
 class MedicalDatasets:
     def __init__(self, csv_filepath, folder_path):
+        """
+
+        :param csv_filepath: 指定时间段的药物浓度数据
+        :param folder_path: 用于存储各项数据的目录
+        """
         self.__device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.csv_filepath = csv_filepath
         self.folder_path = folder_path
@@ -46,21 +51,22 @@ class MedicalDatasets:
         :param overwrite: 是否覆盖已有的npy文件
         :return: 保存所有器官及其df的字典
         """
+        # 路径初始化
         npy_file = f'{self.folder_path}\\multi_organ.npy'
-        smile_file = f'{self.folder_path}\\SMILE.csv'
+        desc_file = f'{self.folder_path}\\Mordred_md.csv'
         mordred_50_tuned_index = f'{self.folder_path}\\mordred_50_tuned_index.npy'
         mordred_100_tuned_index = f'{self.folder_path}\\mordred_100_tuned_index.npy'
-
         if overwrite or not os.path.exists(npy_file):
+            # 读取浓度数据，并获取分子描述符
             df = pd.read_csv(self.csv_filepath)
             # df = clean_desc_dataframe(df)
             smiles = pd.DataFrame({'SMILES': df.iloc[:, 1]})
-            # 计算SMILES的Mordred描述符，然后保存到smile_file文件中方便再次读取
-            if not os.path.exists(smile_file):
+            # 计算SMILES的Mordred描述符，然后保存到desc_file文件中方便再次读取
+            if not os.path.exists(desc_file):
                 Modred_Desc = DataPreprocess.calculate_desc(smiles).iloc[:, 1:]
-                Modred_Desc.to_csv(smile_file, index=False)
+                Modred_Desc.to_csv(desc_file, index=False)
             else:
-                Modred_Desc = pd.read_csv(smile_file)
+                Modred_Desc = pd.read_csv(desc_file)
 
             # 预处理数据集的x和y
             sc = StandardScaler()
@@ -86,7 +92,7 @@ class MedicalDatasets:
                 # concentration_data = pd.Series({'Concentration': col})
                 # 保存50个筛选特征索引
                 if len(desc_50_idx_list) == 0:
-                    desc_50_idx_list = FeatureExtraction(Modred_Desc, concentration_data.fillna(value=0)).\
+                    desc_50_idx_list = FeatureExtraction(Modred_Desc, concentration_data.fillna(value=0)). \
                         feature_extraction(TBE=True, returnIndex=True)
                     print("Length of 50 desc list: ", len(desc_50_idx_list))
                     np.save(mordred_50_tuned_index, desc_50_idx_list)
@@ -94,7 +100,7 @@ class MedicalDatasets:
                 if len(desc_100_idx_list) == 0:
                     desc_100_idx_list = FeatureExtraction(Modred_Desc,
                                                           concentration_data.fillna(value=0),
-                                                          RFE_features_to_select=100)\
+                                                          RFE_features_to_select=100) \
                         .feature_extraction(TBE=True, returnIndex=True)
                     print("Length of 100 desc list: ", len(desc_100_idx_list))
                     np.save(mordred_100_tuned_index, desc_100_idx_list)

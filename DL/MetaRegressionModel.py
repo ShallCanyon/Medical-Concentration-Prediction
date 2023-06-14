@@ -6,16 +6,43 @@ import torch.nn.functional as F
 class RegressionModel(nn.Module):
     def __init__(self, input_size, n_hidden, output_size=1):
         super(RegressionModel, self).__init__()
-        # self.linear = nn.Linear(input_size, output_size)
-        self.hidden1 = nn.Linear(input_size, n_hidden)
-        self.hidden2 = nn.Linear(n_hidden, n_hidden)
+        # self.layer1 = nn.Linear(input_size, n_hidden)
+        # self.layer2 = nn.Linear(n_hidden, int(n_hidden / 2))
+        # self.layer3 = nn.Linear(int(n_hidden / 2), int(n_hidden / 4))
+        # self.predict = nn.Linear(int(n_hidden / 4), output_size)
+
+        # self.layer1 = nn.Conv1d(input_size, n_hidden, 1)
+        # self.layer2 = nn.Conv1d(n_hidden, n_hidden, 1)
+        # self.layer3 = nn.Conv1d(n_hidden, n_hidden, 1)
+
+        self.layer1 = nn.Linear(input_size, n_hidden)
+        self.layer2 = nn.Linear(n_hidden, n_hidden)
+        self.layer3 = nn.Linear(n_hidden, n_hidden)
+        self.layer4 = nn.Linear(n_hidden, n_hidden)
         self.predict = nn.Linear(n_hidden, output_size)
 
+        self.activate = nn.Tanh()
+        self.dropoutRate = 0.05
+
     def forward(self, x):
-        out = self.hidden1(x)
-        out = F.relu(out)
-        out = self.hidden2(out)
+        # x = x.unsqueeze(0)
+        out = self.layer1(x)
+        out = self.activate(out)
+        # out = F.dropout(out, p=self.dropoutRate)
+
+        out = self.layer2(out)
+        out = self.activate(out)
+        # out = F.dropout(out, p=self.dropoutRate)
+
+        out = self.layer3(out)
+        out = self.activate(out)
+
+        out = self.layer4(out)
+        out = self.activate(out)
+        # out = F.dropout(out, p=self.dropoutRate)
+
         out = torch.sigmoid(out)
+        # out = torch.tanh(out)
         out = self.predict(out)
         return out
 #
